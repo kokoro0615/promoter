@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nightclub:v4:kiosk",
+  "title": "共用端末初期設定案。現場実機検証と管理者承認を要する。",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "4.0.0"
+    },
+    "environment": {
+      "type": "string",
+      "enum": [
+        "EXAMPLE_ONLY",
+        "PRODUCTION_CONFIG"
+      ]
+    },
+    "pin_digits": {
+      "type": "integer",
+      "minimum": 6,
+      "maximum": 12
+    },
+    "max_failed_attempts": {
+      "type": "integer",
+      "minimum": 3,
+      "maximum": 10
+    },
+    "lockout_seconds": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 3600
+    },
+    "idle_lock_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 600
+    },
+    "operator_max_seconds": {
+      "type": "integer",
+      "minimum": 300,
+      "maximum": 43200
+    },
+    "lock_on_background": {
+      "const": true
+    },
+    "single_active_operator_per_device": {
+      "const": true
+    },
+    "device_credential_required": {
+      "const": true
+    },
+    "invalidate_old_tabs": {
+      "const": true
+    },
+    "cache_expiry_hours_after_event": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 12
+    }
+  },
+  "required": [
+    "schema_version",
+    "environment",
+    "pin_digits",
+    "max_failed_attempts",
+    "lockout_seconds",
+    "idle_lock_seconds",
+    "operator_max_seconds",
+    "lock_on_background",
+    "single_active_operator_per_device",
+    "device_credential_required",
+    "invalidate_old_tabs",
+    "cache_expiry_hours_after_event"
+  ],
+  "additionalProperties": false
+}

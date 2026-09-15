@@ -1,0 +1,64 @@
+# decisions.md — ADR / 変更記録
+
+凡例: [採用済み]=上位指示で確定 / [仮採択]=隔離開発での技術選定(本番審査残) / [要承認]=事業者判断
+
+## ADR-IMPL-01 技術基盤 [仮採択]
+- 言語/ランタイム: TypeScript + Node.js 24 (環境実在 v24.19.0)
+- API: Fastify 5 (単一モジュール分割アプリ = architecture.md ADR-01 選択A)
+- DB: PostgreSQL 16.2 (pgserver同梱バイナリ + contribソースからbtree_gistビルド)。Docker/sudo不可の環境制約による。本番同等の engine + extension 構成であり、パッケージマネージャ差異のみ。
+- DB接続: node-postgres(pg)生SQL。ロック順・複合FK・排他制約・再送を明示制御するためORM非採用。
+- migration: 自前ランナー(連番SQL+適用記録)。0001=参照DDL適用、0002以降=アプリ追加(ロール/RLSポリシー/トリガー/索引)。
+- PWA: Vite + React + vite-plugin-pwa。個人PWA/入口PWAは同一アプリのモード分離。
+- Realtime: SSE購読 + changes API(変更API主経路・SSEは通知)。ADR-03の常設gateway相当を同一プロセス内で提供。
+- Worker: 同一リポジトリ別プロセス(outbox配信/期限処理/通知/照合)。
+- 試験: vitest(単体/API統合/実DB並列) + Playwright(ブラウザE2E、キャッシュ済みchromium)。
+- 理由: v4 TypeScript案を採用。環境実在ランタイムと一致、外部クラウド非依存でローカル完結。
+- 根拠: architecture.md §1-2 / 未確定: 本番ホスティング・常設WS可否 → Evidence needed
+
+## ADR-IMPL-02 認証 [仮採択+一部要承認]
+- 個人認証: OIDC抽象化 + 開発用DevIssuer(隔離開発のみ有効、環境変数で明示) + メール代替経路のI/F。LINE OIDC接続は credentials 未提供のためアダプター契約+契約試験まで。実LINE接続=BLOCKED(D-05相当の外部接続ゲート)。
+- 入口: 端末ペアリング(管理者の個人セッションで発行した1回限りコード) + device cookie + 個人PIN(Argon2id) + operator cookie + X-Operator-Context 照合。
+- 秘密値: .env.exampleに名前のみ。値はコミットしない。
+
+## ADR-IMPL-03 RLS・DBロール [仮採択]
+- ロール: app_migrator(所有者相当・適用のみ) / app_runtime(通常バックエンド) / app_readonly(帳票用)。
+- 方針: 全表 RLS 有効+FORCE(原本と同じ)。app_runtime は tenant/store GUC(current_setting)一致行のみ。immutable系(audit_logs, command_receipts, outbox_events, admission_events, approval_decisions, entry台帳)は UPDATE/DELETE 権限自体を付与しない。
+- 否定系試験を通常ロール接続で実行。特権接続での代替はしない。
+
+## ADR-IMPL-04 同期 [仮採択]
+- event_stream_heads行ロック + last_seq++ + outbox同一TX (v4参照方式を採用)。snapshotはREPEATABLE READでcursor+全データ同一スナップショット、snapshot_token=UUID・保持期間付き。
+- ACKは snapshot_token+cursor+対象端末を検証し、未送信/将来カーソルは拒否。
+
+## ADR-IMPL-05 契約の現行版管理 [採用済みの運用]
+- spec/current/openapi.yaml = 実装版の契約。原本との差分は CHG-IMPL-xxx で本ファイルへ記録。
+- config schema は原本コピーを spec/current に保持し変更時は差分記録。
+
+## 変更記録 (原本からの実装差分)
+| 変更ID | 対象 | 理由 | 影響・試験 |
+|---|---|---|---|
+| CHG-IMPL-001 | `x-operator-context` ヘッダー値 = operator_session_id | 端末 cookie と分離し、交代時に stale tab を 409 OPERATOR_CHANGED で確実に失効させるため。`requireOperator` が cookie session と照合する | tests/api operator 交代試験で検証済み |
+| CHG-IMPL-002 | `/auth/dev/login` (開発用 issuer) 追加 | LINE OIDC 実接続は資格情報待ち(B-02)。契約: subject+display_name → opaque session cookie。`DEV_AUTH=1` かつ非 production でのみ有効 | e2e/api 全試験で使用 |
+| CHG-IMPL-003 | `withReceipt` は業務拒否も `command_receipts` に REJECTED として保存し HTTP 200 ではなく `res.httpStatus` を返却する | 契約「同じキーは同じ結果を再生する」を失敗応答にも適用するため。呼び出し側が `reply.code(res.httpStatus)` を適用する規約 | api: idempotency replay / already-decided / over-remainder が 409/422 で検証済み |
+| CHG-IMPL-004 | `GET /device/operators` に `device_id`/`store_id`/`current_operator`/`events` を追加 | 共用端末の kiosk PWA が store スコープのURLを組み立てるために必要 | e2e smoke / device-only 拒否試験 |
+| CHG-IMPL-005 | `visitSummary` に `pass_id`/`pass_presence` を追加 | 入口画面が exit/re-entry に必要な group pass を visit 単位で解決するため | api entry 後の pass 遷移で検証 |
+| CHG-IMPL-006 | worker は同一リポジトリ別プロセス (`src/worker`) で outbox claim→publish, IN_APP通知fan-out, entry_until失効のhold解放sweep | 参照DDLの outbox/notification_jobs/admission_segments をそのまま利用 | outbox_claim/mark_published を app_runtime で実DB検証済み |
+
+## 要承認・BLOCKED(詳細は blockers.md)
+- D-05 PSP選定・実決済接続
+- LINE OIDC 実接続(client_id等の秘密値)
+- D-09 夜間運用/復旧体制・本番公開判定
+- D-10 R2契約・課金条件
+- D-11 開発契約/予算承認
+
+## ADR-IMPL-06 R2/R3 プラットフォーム基盤 [採用]
+- `platform_command_receipts` / `platform_audit_logs` を新設。`command_receipts`/`audit_logs` は (tenant_id, store_id) NOT NULL + RLS tenant一致のため、テナント横断の platform 操作は別表で同一セマンティクス（冪等レシート・REJECTED保存・監査）を実現。ポリシーは `ctx_scope()='system' AND platform_is_operator()`。
+- platform ルートは `requirePlatform`（個人セッション + platform_operators 行を definer 関数で検証）の後、userId を GUC に載せた `sys()` ヘルパーで実行。
+- `export_jobs` の RLS に `OR ctx_scope()='system'` を追加 — worker が全テナントの QUEUED ジョブをスキャンするため（UPDATE自体は per-job で tenant/store GUC を設定）。
+- チケット token は平文をDBに保存せず sha256 hash のみ。発行時一度だけ返却。
+
+## 変更記録（続き）
+| 変更ID | 対象 | 理由 | 影響・試験 |
+|---|---|---|---|
+| CHG-IMPL-007 | 0003 マイグレーション新設: platform_operators/plans/tenant_subscriptions/billing_invoices/tenant_deletion_requests/tenant_onboarding + ticket_products/orders/instances + products/stock_movements/bottle_keeps + platform_command_receipts/platform_audit_logs | R2/R3 のDB基盤。参照DDLに無い表は 0003 で追加 | api r2r3 18件で検証 |
+| CHG-IMPL-008 | `payments.purpose` に TICKET/PRODUCT、`admission_segments.authorization_method` に TICKET を追加 | 券売・POS販売・チケット入場を既存会計/入場構造に乗せるため | redeem→TICKET セグメント検証済み |
+| CHG-IMPL-009 | worker `runExports` + `runOnce()` export（WORKER_AUTOSTART=0 でテストから呼び出し可能） | エクスポート実行の実DB検証をテスト内で行うため | export QUEUED→READY→download 200 検証済み |

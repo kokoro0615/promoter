@@ -1,0 +1,20 @@
+# R2/R3 verification 2026-09-17
+
+## pnpm lint (tsc --noEmit both configs)
+clean, exit 0
+
+## pnpm test (vitest run)
+tests/unit/crypto 4, namekey 5 | tests/db/rls 7 | tests/api/r1 16 | tests/api/r2r3 18
+Test Files 5 passed (5) / Tests 50 passed (50)
+
+## pnpm build
+vite build ok + PWA (dist/sw.js, workbox)
+
+## pnpm test:e2e
+3 passed (login+promoter / admin events+audit / unpaired kiosk)
+
+## pnpm openapi:lint
+spec/current/openapi.yaml valid, 2 warnings (unused components, 原本由来)
+
+## worker
+runOnce(): outbox=3 notifications=0 expired=0 exports=1 (export job QUEUED->READY, csv download 200)
