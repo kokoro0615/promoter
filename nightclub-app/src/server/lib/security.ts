@@ -76,6 +76,7 @@ const limiters = [
   { re: /^\/api\/device\/(enroll|operator-sessions)/, name: 'device', limit: 20, windowMs: 60_000 },
   { re: /^\/api\/invitations\//, name: 'invite', limit: 20, windowMs: 60_000 },
   { re: /\/tickets\/redeem$/, name: 'redeem', limit: 30, windowMs: 60_000 },
+  { re: /^\/api\/public\//, name: 'public', limit: 30, windowMs: 60_000 },
   { re: /\/customers(\?|$)/, name: 'custsearch', limit: 60, windowMs: 60_000 },
   { re: /^\/api\/integrations\/[^/]+\/webhooks$/, name: 'webhook', limit: 120, windowMs: 60_000 },
 ];

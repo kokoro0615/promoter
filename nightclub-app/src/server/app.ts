@@ -16,6 +16,7 @@ import opsRoutes from './routes/ops.js';
 import platformRoutes, { storeSettingsRoutes } from './routes/platform.js';
 import ticketRoutes from './routes/tickets.js';
 import posRoutes from './routes/pos.js';
+import publicRoutes from './routes/public.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, genReqId: () => randomUUID() });
@@ -74,6 +75,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(storeSettingsRoutes);
     await api.register(ticketRoutes);
     await api.register(posRoutes);
+    await api.register(publicRoutes);
   }, { prefix: '/api' });
 
   return app;
