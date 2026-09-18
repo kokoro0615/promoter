@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { withCtx, withSystem } from '../lib/db.js';
 import { E } from '../lib/errors.js';
 import { hashToken, randomToken, sha256 } from '../lib/crypto.js';
+import { otpauthUrl, totpSecret, totpVerify } from '../lib/totp.js';
 import { audit } from '../lib/tx.js';
 import {
   body, params, query, storeParam, str, uuid as sUuid, version,
@@ -518,5 +519,254 @@ export default async function authRoutes(app: FastifyInstance) {
         });
         return { resource_id: roleId, version: r.rows[0].version, status: 'UPDATED', trace_id: req.traceId };
       });
+  });
+
+  // ---- email-link login (LINE Login alternative, R&D decision) --------------
+  // Delivery of the actual email is an external-integration blocker (no mail
+  // provider contract). Tokens are issued server-side; in DEV_AUTH mode the
+  // token is returned in the response so the flow is exercisable end-to-end.
+  app.post('/auth/email-link/request', {
+    schema: {
+      body: body({ email: { type: 'string', format: 'email', maxLength: 320 } },
+        ['email']),
+    },
+  }, async (req, reply) => {
+    reply.code(202);
+    const b = req.body as { email?: string };
+    const email = (b?.email ?? '').trim().toLowerCase();
+    if (!email || !email.includes('@')) throw E.invalid('email required');
+    const found = await withSystem(async (c) => {
+      const r = await c.query(
+        'SELECT * FROM nightclub.user_by_email_identity($1)', [email]);
+      return r.rows[0];
+    });
+    // Always 202: the response must not reveal whether the address is bound.
+    if (!found || found.status !== 'ACTIVE') {
+      return { accepted: true, trace_id: req.traceId };
+    }
+    const token = randomToken();
+    const expires = new Date(Date.now() + config.emailLinkTtlSec * 1000);
+    await withSystem((c) =>
+      c.query('SELECT nightclub.email_link_issue($1,$2,$3,$4)',
+        [email, sha256(token), found.user_id, expires]));
+    return {
+      accepted: true, trace_id: req.traceId,
+      ...(config.devAuth ? { dev_token: token, expires_at: expires } : {}),
+    };
+  });
+
+  app.post('/auth/email-link/redeem', {
+    schema: { body: body({ token: str(200) }, ['token']) },
+  }, async (req, reply) => {
+    const b = req.body as { token?: string };
+    if (!b?.token) throw E.invalid('token required');
+    const r = await withSystem(async (c) => {
+      const res = await c.query(
+        'SELECT * FROM nightclub.email_link_redeem($1)', [sha256(b.token!)]);
+      return res.rows[0] as
+        { user_id: string | null; email: string; already_used: boolean }
+        | undefined;
+    });
+    if (!r) throw E.invalid('invalid or expired token');
+    if (r.already_used) throw E.invalid('token already used');
+    if (!r.user_id) throw E.invalid('invalid or expired token');
+    const s = await createPersonalSession(r.user_id);
+    setPersonalCookie(reply, s.token, config.ttl.personalSec);
+    return {
+      user_id: r.user_id, memberships: await membershipList(r.user_id),
+    };
+  });
+
+  // Bind an email identity to the signed-in user (verified via link token).
+  app.post('/me/email-identity/bind', {
+    schema: {
+      body: body({ email: { type: 'string', format: 'email', maxLength: 320 } },
+        ['email']),
+    },
+  }, async (req, reply) => {
+    reply.code(202);
+    const p = await req.auth.personal();
+    if (!p) throw E.unauthenticated();
+    const b = req.body as { email?: string };
+    const email = (b?.email ?? '').trim().toLowerCase();
+    if (!email || !email.includes('@')) throw E.invalid('email required');
+    const existing = await withSystem(async (c) => {
+      const r = await c.query(
+        'SELECT * FROM nightclub.user_by_email_identity($1)', [email]);
+      return r.rows[0];
+    });
+    if (existing && existing.user_id !== p.userId) {
+      throw E.conflict('email already bound to another account');
+    }
+    const token = randomToken();
+    const expires = new Date(Date.now() + config.emailLinkTtlSec * 1000);
+    await withSystem((c) =>
+      c.query('SELECT nightclub.email_link_issue($1,$2,$3,$4)',
+        [email, sha256(token), p.userId, expires]));
+    return {
+      accepted: true, trace_id: req.traceId,
+      ...(config.devAuth ? { dev_token: token, expires_at: expires } : {}),
+    };
+  });
+
+  app.post('/me/email-identity/confirm', {
+    schema: { body: body({ token: str(200) }, ['token']) },
+  }, async (req) => {
+    const p = await req.auth.personal();
+    if (!p) throw E.unauthenticated();
+    const b = req.body as { token?: string };
+    if (!b?.token) throw E.invalid('token required');
+    const r = await withSystem(async (c) => {
+      const tok = await c.query(
+        'SELECT * FROM nightclub.email_link_redeem($1)', [sha256(b.token!)]);
+      const row = tok.rows[0] as
+        { user_id: string | null; email: string; already_used: boolean }
+        | undefined;
+      if (!row || row.already_used || !row.user_id) {
+        throw E.invalid('invalid or expired token');
+      }
+      if (row.user_id !== p.userId) {
+        throw E.forbidden('token issued for a different account');
+      }
+      return row.email;
+    });
+    await withSystem((c) =>
+      c.query('SELECT nightclub.email_identity_bind($1,$2)', [p.userId, r]));
+    return { bound: r, trace_id: req.traceId };
+  });
+
+  // ---- TOTP MFA + recovery codes + session step-up ---------------------------
+  app.get('/me/mfa', async (req) => {
+    const p = await req.auth.personal();
+    if (!p) throw E.unauthenticated();
+    const rows = await withSystem(async (c) =>
+      (await c.query('SELECT * FROM nightclub.mfa_state()', [])).rows,
+      undefined, { userId: p.userId });
+    return {
+      credentials: rows,
+      stepped_up: !!p.stepUpAt
+        && Date.now() - p.stepUpAt.getTime() < config.stepUpSec * 1000,
+    };
+  });
+
+  app.post('/me/mfa/totp/begin', async (req) => {
+    const p = await req.auth.personal();
+    if (!p) throw E.unauthenticated();
+    const secret = totpSecret();
+    await withSystem((c) =>
+      c.query('SELECT nightclub.mfa_totp_begin($1)', [secret]),
+      undefined, { userId: p.userId });
+    const me = await withSystem((c) =>
+      c.query('SELECT display_name FROM nightclub.app_users WHERE id=$1',
+        [p.userId]));
+    return {
+      secret,
+      otpauth_url: otpauthUrl(secret, me.rows[0]?.display_name ?? p.userId),
+      trace_id: req.traceId,
+    };
+  });
+
+  app.post('/me/mfa/totp/activate', {
+    schema: { body: body({ code: { type: 'string', pattern: '^[0-9]{6}$' } },
+      ['code']) },
+  }, async (req) => {
+    const p = await req.auth.personal();
+    if (!p) throw E.unauthenticated();
+    const b = req.body as { code?: string };
+    const sec = await withSystem(async (c) =>
+      (await c.query('SELECT * FROM nightclub.mfa_totp_secret()', [])).rows[0],
+      undefined, { userId: p.userId });
+    if (!sec || sec.status !== 'PENDING') {
+      throw E.invalid('no pending TOTP enrollment');
+    }
+    if (!b?.code || !totpVerify(sec.secret, b.code)) {
+      throw E.invalid('invalid code');
+    }
+    const codes = Array.from({ length: 10 }, () => randomToken(9));
+    await withSystem(async (c) => {
+      await c.query('SELECT nightclub.mfa_totp_activate()', []);
+      await c.query('SELECT nightclub.mfa_recovery_replace($1)',
+        [codes.map((x) => sha256(x))]);
+      await c.query('SELECT nightclub.auth_mark_step_up($1)', [p.sessionId]);
+    }, undefined, { userId: p.userId });
+    return { activated: true, recovery_codes: codes, trace_id: req.traceId };
+  });
+
+  // Verify a second factor: TOTP code, or single-use recovery code.
+  async function verifySecondFactor(
+    userId: string, code: string | undefined, recovery: string | undefined,
+  ): Promise<'totp' | 'recovery'> {
+    const sec = await withSystem(async (c) =>
+      (await c.query('SELECT * FROM nightclub.mfa_totp_secret()', [])).rows[0],
+      undefined, { userId });
+    if (!sec || sec.status !== 'ACTIVE') {
+      throw E.invalid('TOTP not enrolled');
+    }
+    if (code && totpVerify(sec.secret, code)) return 'totp';
+    if (recovery) {
+      const ok = await withSystem(async (c) => {
+        const r = await c.query(
+          'SELECT nightclub.mfa_recovery_consume($1) AS ok',
+          [sha256(recovery)]);
+        return r.rows[0]?.ok === true;
+      }, undefined, { userId });
+      if (ok) return 'recovery';
+    }
+    throw E.invalid('invalid second factor');
+  }
+
+  app.post('/me/mfa/step-up', {
+    schema: {
+      body: body({
+        code: { type: 'string', pattern: '^[0-9]{6}$' },
+        recovery_code: str(64),
+      }),
+    },
+  }, async (req) => {
+    const p = await req.auth.personal();
+    if (!p) throw E.unauthenticated();
+    const b = req.body as { code?: string; recovery_code?: string };
+    if (!b?.code && !b?.recovery_code) throw E.invalid('code required');
+    await verifySecondFactor(p.userId, b.code, b.recovery_code);
+    await withSystem((c) =>
+      c.query('SELECT nightclub.auth_mark_step_up($1)', [p.sessionId]),
+      undefined, { userId: p.userId });
+    return { stepped_up: true, trace_id: req.traceId };
+  });
+
+  app.post('/me/mfa/recovery/regenerate', {
+    schema: {
+      body: body({ code: { type: 'string', pattern: '^[0-9]{6}$' } }, ['code']),
+    },
+  }, async (req) => {
+    const p = await req.auth.personal();
+    if (!p) throw E.unauthenticated();
+    const b = req.body as { code?: string };
+    await verifySecondFactor(p.userId, b.code, undefined);
+    const codes = Array.from({ length: 10 }, () => randomToken(9));
+    await withSystem((c) =>
+      c.query('SELECT nightclub.mfa_recovery_replace($1)',
+        [codes.map((x) => sha256(x))]),
+      undefined, { userId: p.userId });
+    return { recovery_codes: codes, trace_id: req.traceId };
+  });
+
+  app.post('/me/mfa/totp/disable', {
+    schema: {
+      body: body({
+        code: { type: 'string', pattern: '^[0-9]{6}$' },
+        recovery_code: str(64),
+      }),
+    },
+  }, async (req) => {
+    const p = await req.auth.personal();
+    if (!p) throw E.unauthenticated();
+    const b = req.body as { code?: string; recovery_code?: string };
+    if (!b?.code && !b?.recovery_code) throw E.invalid('code required');
+    await verifySecondFactor(p.userId, b.code, b.recovery_code);
+    await withSystem((c) =>
+      c.query('SELECT nightclub.mfa_totp_disable()', []),
+      undefined, { userId: p.userId });
+    return { disabled: true, trace_id: req.traceId };
   });
 }

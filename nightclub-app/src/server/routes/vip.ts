@@ -1,12 +1,12 @@
 // VIP slice: floor maps, tables, bookings, allocation (exclusion constraint),
 // dev checkout adapter + signed dev webhook, decisions, move, cancel.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { createHmac } from 'node:crypto';
 import { config } from '../config.js';
 import type { Guc } from '../lib/db.js';
 import { withCtx, withSystem } from '../lib/db.js';
 import { E } from '../lib/errors.js';
 import { uuid, sha256 } from '../lib/crypto.js';
+import { getProvider } from '../lib/psp.js';
 import { audit, emit, idemKey, withReceipt } from '../lib/tx.js';
 import {
   body, eventChild, eventParams, int, isoTs, minor, params, storeParam,
@@ -31,10 +31,6 @@ async function caller(req: FastifyRequest, storeId: string, perm: string, eventI
   requirePerm(member, perm);
   return { g: gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId), member };
 }
-
-// devpsp: deterministic dev signature. Real PSP = D-05 gated.
-const devSign = (ref: string, result: string) =>
-  createHmac('sha256', config.snapshotSecret).update(`devpsp:${ref}:${result}`).digest('hex');
 
 export default async function vipRoutes(app: FastifyInstance) {
   // ---- floor inventory ----
@@ -319,7 +315,14 @@ export default async function vipRoutes(app: FastifyInstance) {
           throw E.invalid(`booking ${row.status} not payable`);
         }
         if (Number(row.deposit_minor) <= 0) throw E.invalid('no deposit required');
-        const ref = `devpsp_${uuid()}`;
+        // Provider abstraction: checkout creation delegates to the PSP
+        // adapter (devpsp today; stripe seam behind config — see lib/psp.ts).
+        const psp = getProvider('devpsp');
+        const co = await psp.createCheckout({
+          amount_minor: Number(row.deposit_minor), currency: row.currency,
+          provider_account: 'dev',
+        });
+        const ref = co.provider_reference;
         // Deposit is a VIP sale: order + line first so the money trail and
         // webhook can resolve the booking via payment.order_id -> booking_id.
         const so = await c.query(
@@ -343,10 +346,10 @@ export default async function vipRoutes(app: FastifyInstance) {
               order_id, method, purpose, amount_minor, currency, status,
               provider, provider_account, provider_reference, operation_id)
            VALUES ($1,$2,$3,$4,$5,$6,'PSP','DEPOSIT',$7,$8,'CREATED',
-                   'devpsp','dev',$9,$10) RETURNING id`,
+                   $9,$10,$11,$12) RETURNING id`,
           [g.tenantId, g.storeId, eventId, c0.member.membershipId,
            c0.operator?.sessionId ?? null, orderId, row.deposit_minor,
-           row.currency, ref, opId]);
+           row.currency, co.provider, co.provider_account, ref, opId]);
         await c.query(
           `UPDATE nightclub.bookings SET status='PAYMENT_PENDING',
               version=version+1, updated_at=CURRENT_TIMESTAMP
@@ -360,8 +363,8 @@ export default async function vipRoutes(app: FastifyInstance) {
         return {
           httpStatus: 201,
           body: {
-            checkout_url: `/devpsp/checkout/${ref}`,
-            provider: 'devpsp', provider_reference: ref,
+            checkout_url: co.checkout_url,
+            provider: co.provider, provider_reference: ref,
             state: 'CREATED', trace_id: req.traceId,
           },
         };
@@ -371,8 +374,9 @@ export default async function vipRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  // Dev PSP webhook: signed provider callback -> payment SUCCEEDED ->
-  // booking CONFIRMED. Real PSP signature verification is a D-05 gate.
+  // Provider webhook: adapter verifies the signature and normalizes the
+  // event; the money-side effects below are provider-agnostic. devpsp is
+  // the only live provider; stripe is a config-gated seam (lib/psp.ts).
   app.post('/integrations/:provider/webhooks', {
     schema: {
       params: params({ provider: str(64) }),
@@ -384,17 +388,8 @@ export default async function vipRoutes(app: FastifyInstance) {
     },
   }, async (req) => {
     const { provider } = req.params as { provider: string };
-    if (provider !== 'devpsp') throw E.notFound('provider');
-    const b = req.body as {
-      provider_reference?: string; result?: string; signature?: string;
-      account?: string;
-    };
-    if (!b?.provider_reference || !b.result || !b.signature) {
-      throw E.invalid('provider_reference, result, signature required');
-    }
-    if (!['success', 'failure'].includes(b.result)) throw E.invalid('result');
-    const expect = devSign(b.provider_reference, b.result);
-    if (expect !== b.signature) throw E.unauthenticated('bad signature');
+    const psp = getProvider(provider);
+    const ev = psp.verifyWebhook(req.body);
     // Phase 1 (bare system scope): locate the payment by its globally-unique
     // provider reference so tenant/store GUCs can be set for the real work.
     // Unmatched references are ACKed but recorded nowhere — no tenant exists
@@ -402,9 +397,9 @@ export default async function vipRoutes(app: FastifyInstance) {
     const found = await withSystem(async (c) => (await c.query(
       `SELECT tenant_id, store_id, event_id, id, order_id, status
          FROM nightclub.payments
-        WHERE provider='devpsp' AND provider_account='dev'
+        WHERE provider=$2 AND provider_account=$3
           AND provider_reference=$1`,
-      [b.provider_reference])).rows[0]);
+      [ev.provider_reference, ev.provider, ev.provider_account])).rows[0]);
     if (!found) return { accepted: true, matched: false };
     const guc = {
       tenantId: found.tenant_id as string, storeId: found.store_id as string,
@@ -416,12 +411,12 @@ export default async function vipRoutes(app: FastifyInstance) {
         `INSERT INTO nightclub.integration_events
            (tenant_id, store_id, provider, provider_account, external_event_id,
             payload_hash, payload, status)
-         VALUES ($1,$2,'devpsp','dev',$3,$4,$5,'PROCESSED')
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'PROCESSED')
          ON CONFLICT (provider, provider_account, external_event_id)
          DO NOTHING RETURNING id`,
-        [found.tenant_id, found.store_id,
-         `${b.provider_reference}:${b.result}`,
-         sha256(JSON.stringify(b)), JSON.stringify(b)]);
+        [found.tenant_id, found.store_id, ev.provider, ev.provider_account,
+         ev.external_event_id,
+         sha256(JSON.stringify(req.body)), JSON.stringify(req.body)]);
       if (!dup.rows[0]) return { accepted: true, duplicate: true };
       const r = await c.query(
         `UPDATE nightclub.payments SET status=$2, version=version+1,
@@ -429,7 +424,7 @@ export default async function vipRoutes(app: FastifyInstance) {
           WHERE tenant_id=$3 AND store_id=$4 AND id=$1
             AND status IN ('CREATED','PROCESSING')
           RETURNING event_id, order_id`,
-        [found.id, b.result === 'success' ? 'SUCCEEDED' : 'FAILED',
+        [found.id, ev.result === 'success' ? 'SUCCEEDED' : 'FAILED',
          found.tenant_id, found.store_id]);
       const payment = r.rows[0];
       if (!payment) return { accepted: true, duplicate: true };
@@ -445,7 +440,7 @@ export default async function vipRoutes(app: FastifyInstance) {
         [found.tenant_id, found.store_id, payment.event_id, payment.order_id]);
       const booking = bk.rows[0];
       const g = { scope: 'system' as const, ...guc };
-      if (b.result === 'success') {
+      if (ev.result === 'success') {
         if (booking?.status === 'PAYMENT_PENDING') {
           await c.query(
             `UPDATE nightclub.bookings SET status='CONFIRMED', version=version+1,

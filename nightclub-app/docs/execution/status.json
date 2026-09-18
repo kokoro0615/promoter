@@ -6,17 +6,18 @@
   "v5": {
     "branch": "feat/v5-jp-completion",
     "baseline_sha": "58e9438",
-    "phase": "Phase 3c endpoint completion in progress — missing routes implemented + regression suite green",
+    "phase": "Phase 3d auth-alternatives + PSP seam complete — full regression green",
     "audit": "findings.json (30 findings), requirements_registry.json",
     "baseline_results": "unit 9 / db 7 / api 34 / e2e 3 — all pass @58e9438",
     "resume": "docs/execution/resume.md",
-    "latest_results": "unit 9 / db 7 / api 90 (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35) — all pass",
+    "latest_results": "unit 9 / db 7 / api 101 (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35 authalt:11) — all pass",
     "evidence_phase3b": "docs/execution/evidence/phase3b_verify_20260919.txt",
-    "evidence_phase3c": "docs/execution/evidence/phase3c_verify_20260919.txt"
+    "evidence_phase3c": "docs/execution/evidence/phase3c_verify_20260919.txt",
+    "evidence_phase3d": "docs/execution/evidence/phase3d_verify_20260919.txt"
   },
   "current_release": "R1 verified; R2/R3 internal foundations verified",
   "current_epic": "v5: Phase 3 foundation hardening in progress",
-  "phase": "v5 Phase 3c: 欠落エンドポイント実装（roles/membership roles/通知inbox/customer詳細+tags/event update・duplicate・cancel/policy-versions一覧/visit segments・companions/pass参照/provisional reconcile/orders一覧/quotations/reward statements・disputes・payouts/ticket lifecycle/stocktakes/campaigns/forecasts/platform operators・stores）。migration 0005で events CANCELED + nc_stores system-scope WITH CHECK + 対象DELETE grant。v5endpoints.test.ts 35件追加・全緑。api 90 tests全パス",
+  "phase": "v5 Phase 3d: 認証代替＋PSP抽象化。email-linkログイン(request/redeem/bind/confirm・202 generic・dev_tokenはDEV_AUTH限定)、TOTP登録/有効化/無効化、recovery codes(hash保存・単一使用)、session step-up(auth_sessions.step_up_at、mfa_state() ACTIVE時のみ金銭コマンド要求: refund.create/execute・settlement_payment.record)、PSP adapter(lib/psp.ts: devpsp実装+stripe seam・未設定時503)。migration 0006で auth_resolve_session+step_up_at・email_link_redeem+email。authalt.test.ts 11件追加。api 101 tests全パス",
   "completed_features": [
     "EP01-04: tenants/stores/users/memberships/roles/permissions, dev-issuer login, invitations, memberships suspend, operator PIN (argon2id), device enrollment/pairing, operator sessions with epoch-based replacement + X-Operator-Context",
     "EP05-08: events + policy versions (publish gate), customers + name/kana search (same-name preserved), visits + admission segments + price-rule adjudication",

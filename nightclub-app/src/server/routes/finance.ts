@@ -2,7 +2,7 @@
 // refunds (pending-review states), metrics, referrer own-performance.
 // PSP checkout is a provider-gated adapter (see integrations.ts).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { Guc } from '../lib/db.js';
+import type { Client, Guc } from '../lib/db.js';
 import { withCtx } from '../lib/db.js';
 import { E } from '../lib/errors.js';
 import { uuid } from '../lib/crypto.js';
@@ -13,11 +13,12 @@ import {
 } from '../lib/schemas.js';
 import { visitSummary } from '../lib/summary.js';
 import {
-  requirePersonal, requireOperator, requirePerm, type MemberCtx, type OperatorCtx, gucPersonal, gucOperator,
+  requirePersonal, requireOperator, requirePerm, requireStepUpIfEnrolled,
+  type MemberCtx, type OperatorCtx, type PersonalCtx, gucPersonal, gucOperator,
 } from '../lib/ctx.js';
 import { config } from '../config.js';
 
-interface Caller { g: Guc; member: MemberCtx; operator?: OperatorCtx }
+interface Caller { g: Guc; member: MemberCtx; operator?: OperatorCtx; personal?: PersonalCtx }
 
 async function caller(req: FastifyRequest, storeId: string, eventId: string | null, perm: string): Promise<Caller> {
   const op = eventId ? await req.auth.operator().catch((e) => {
@@ -32,7 +33,14 @@ async function caller(req: FastifyRequest, storeId: string, eventId: string | nu
   }
   const { member, personal } = await requirePersonal(req, storeId);
   requirePerm(member, perm);
-  return { g: gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId), member };
+  return { g: gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId), member, personal };
+}
+
+// Money-moving commands require a fresh step-up when the caller's personal
+// session has an active TOTP credential. Operator (kiosk) sessions are
+// device-pinned and out of scope for personal step-up.
+async function stepUp(c0: Caller, c: Client) {
+  if (c0.personal) await requireStepUpIfEnrolled(c, c0.personal, config.stepUpSec);
 }
 
 export default async function financeRoutes(app: FastifyInstance) {
@@ -209,7 +217,9 @@ export default async function financeRoutes(app: FastifyInstance) {
       throw E.invalid('amount_minor and reason required');
     }
     const g = c0.g;
-    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+    const res = await withCtx(g, async (c) => {
+      await stepUp(c0, c);
+      return withReceipt(c, g, {
       actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
       operation: 'refund.create', key: idemKey(req), body: { ...b, paymentId },
       receiptTtlSec: config.ttl.receiptSec,
@@ -255,7 +265,8 @@ export default async function financeRoutes(app: FastifyInstance) {
           body: { refund_id: r.rows[0].id, status: 'REQUESTED', trace_id: req.traceId },
         };
       },
-    }));
+    });
+    });
     reply.code(res.httpStatus);
     return res.body;
   });
@@ -271,7 +282,9 @@ export default async function financeRoutes(app: FastifyInstance) {
     const c0 = await caller(req, storeId, eventId, 'payment.refund');
     const b = (req.body ?? {}) as { expected_version?: number };
     const g = c0.g;
-    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+    const res = await withCtx(g, async (c) => {
+      await stepUp(c0, c);
+      return withReceipt(c, g, {
       actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
       operation: 'refund.execute', key: idemKey(req), body: { ...b, refundId },
       receiptTtlSec: config.ttl.receiptSec,
@@ -315,7 +328,8 @@ export default async function financeRoutes(app: FastifyInstance) {
         });
         return { httpStatus: 200, body: { refund_id: refundId, status: 'SUCCEEDED', trace_id: req.traceId } };
       },
-    }));
+    });
+    });
     reply.code(res.httpStatus);
     return res.body;
   });
@@ -665,7 +679,9 @@ export default async function financeRoutes(app: FastifyInstance) {
       amount_minor?: number; external_reference?: string; paid_at?: string;
     };
     const g = c0.g;
-    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+    const res = await withCtx(g, async (c) => {
+      await stepUp(c0, c);
+      return withReceipt(c, g, {
       actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
       operation: 'settlement_payment.record', key: idemKey(req), body: b,
       receiptTtlSec: config.ttl.receiptSec,
@@ -700,7 +716,8 @@ export default async function financeRoutes(app: FastifyInstance) {
           body: { settlement_payment_id: ins.rows[0].id, trace_id: req.traceId },
         };
       },
-    }));
+    });
+    });
     reply.code(res.httpStatus);
     return res.body;
   });

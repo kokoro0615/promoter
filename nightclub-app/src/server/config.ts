@@ -39,6 +39,12 @@ export const config = {
     pageLimit: 500,
     pollMs: int(env.CHANGES_POLL_MS, 1500),
   },
+  psp: {
+    stripeSecretKey: env.STRIPE_SECRET_KEY || '',
+    stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET || '',
+  },
+  emailLinkTtlSec: int(env.EMAIL_LINK_TTL_SEC, 15 * 60),
+  stepUpSec: int(env.STEP_UP_SEC, 15 * 60),
 };
 
 if (config.isProd && config.snapshotSecret === 'dev-snapshot-secret') {

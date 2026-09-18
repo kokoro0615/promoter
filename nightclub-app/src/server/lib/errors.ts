@@ -58,8 +58,9 @@ export const E = {
     new AppError('RATE_LIMITED', 429, 'rate limited', { retryable: true }),
   crossOriginForbidden: () =>
     new AppError('CROSS_ORIGIN_FORBIDDEN', 403, 'cross-origin request forbidden'),
-  unavailable: () =>
-    new AppError('SERVICE_UNAVAILABLE', 503, 'service unavailable', { retryable: true }),
+  unavailable: (m = 'service unavailable') =>
+    new AppError('SERVICE_UNAVAILABLE', 503, m, { retryable: true }),
+  conflict: (m = 'conflict') => new AppError('CONFLICT', 409, m),
   paymentPending: () =>
     new AppError('PAYMENT_PENDING_REVIEW', 409, 'payment pending review'),
   commandInProgress: () =>
