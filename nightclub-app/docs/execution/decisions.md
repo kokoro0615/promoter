@@ -62,3 +62,37 @@
 | CHG-IMPL-007 | 0003 マイグレーション新設: platform_operators/plans/tenant_subscriptions/billing_invoices/tenant_deletion_requests/tenant_onboarding + ticket_products/orders/instances + products/stock_movements/bottle_keeps + platform_command_receipts/platform_audit_logs | R2/R3 のDB基盤。参照DDLに無い表は 0003 で追加 | api r2r3 18件で検証 |
 | CHG-IMPL-008 | `payments.purpose` に TICKET/PRODUCT、`admission_segments.authorization_method` に TICKET を追加 | 券売・POS販売・チケット入場を既存会計/入場構造に乗せるため | redeem→TICKET セグメント検証済み |
 | CHG-IMPL-009 | worker `runExports` + `runOnce()` export（WORKER_AUTOSTART=0 でテストから呼び出し可能） | エクスポート実行の実DB検証をテスト内で行うため | export QUEUED→READY→download 200 検証済み |
+
+## ADR-IMPL-07 セキュリティ基盤 [採用]
+- 全ルートに runtime schema (params/querystring/body, `additionalProperties:false` 許可リスト化) を適用。Fastify+ajv で strip+検証。
+- CSRF: cookie セッションの mutation は `Origin`/`Referer` 検査（same-origin 必須、 Bearer/token 系は除外）。
+- レート制限: 認証・公開・高コスト経路に in-memory bucket。公開 booking submission は IP+slug 単位。
+- セキュリティヘッダ: onSend で nosniff/frame-deny/referrer 制御等を付与。
+
+## ADR-IMPL-08 認証代替・MFA・PSP抽象化 [採用]
+- email-link: `email_login_tokens`(hash保管・単発・期限付き・attempts上限)。redeem で session 発行 + `email` issuer identity 自動bind。メール配送自体は外部接続ゲート(B-11) — 開発では token を応答/ログで受け取る。
+- TOTP MFA: `mfa_credentials`(kind=totp) + `mfa_recovery_codes`(hash)。begin→activate→`auth_sessions.step_up_at` で step-up。金銭系コマンド（refund/settlement-payments/精算確定）は enroll 済み個人セッションに fresh step-up を要求。端末オペレータセッションは対象外。
+- PSP: `lib/psp.ts` アダプタ層。`dev` プロバイダ実装 + `stripe` seam(未接続・B-01)。webhook は provider_reference で payment を引き、tenant/store GUC 配下で冪等確定。店舗資金は各店舗契約で直接受領 — プラットフォームは資金を受領・移転・精算しない。
+
+## ADR-IMPL-09 公開予約・役割別UI [採用]
+- `booking_pages`(slug, settings jsonb) + SECURITY DEFINER `booking_page_lookup` で公開参照は安全列のみ。公開 submission は `APPROVAL_PENDING` の booking として作成し contact を `bookings.contact` に保持。公開 checkout は実装しない（資金境界）。
+- 公開ページ close で公開 lookup から除外。スタッフ booking 一覧は contact を返す。
+- フロント: `src/web/views/` 役割別分割 (login/promoter/kiosk/admin/adminevt/platform/publicbook) + `ui.tsx` 共有部品。API エラーは problem+json `{code,detail}` で統一。
+
+## ADR-IMPL-10 契約parityの残差分 [採用]
+- `GET /stores/{storeId}/exports/{exportId}` は `GET /exports`(一覧=status) + `GET /exports/{exportId}/download` で代替。
+- `POST /public/{publicToken}/bookings` は `POST /public/booking-pages/{slug}/submissions` として実装。
+- `POST /public/bookings/{publicToken}/checkout` は資金境界のため非実装（公開予約は APPROVAL_PENDING 止まり、支払は店舗直接）。
+- 生成物: `tools/api_parity.mjs` → `docs/execution/api_parity.txt`（spec 75/78 実装、impl-only 107）。
+
+## 変更記録（続き2）
+| 変更ID | 対象 | 理由 | 影響・試験 |
+|---|---|---|---|
+| CHG-IMPL-010 | `payments.order_id`/`sales_orders.visit_id`/`integration_events.tenant_id,store_id` NULL許容、`bookings.contact`/`stores.settings`/`events.is_private`/`notification_deliveries.payload` 追加 (0004) | checkout/webhook 死にコードの解消と v5 機能基盤 | vip 8件・回帰全パス |
+| CHG-IMPL-011 | webhook は provider_reference で payment を引いてから tenant/store GUC で処理 (system SELECT ポリシー追加) | GUC未設定の裸 system では payments 不可視で全件失敗していた | devpsp webhook 200・booking CONFIRMED 検証 |
+| CHG-IMPL-012 | `auth_resolve_session` に `step_up_at` 露出、`email_link_redeem` に email 返却列 (0006) | step-up 判定と email identity 自動bind に必要 | authalt 11件 |
+| CHG-IMPL-013 | `nc_stores` WITH CHECK に system scope 許可、非台帳 join/config 表へ DELETE 付与 (0005) | platform 運用者のテナント横断店舗作成と管理操作 | v5endpoints 35件 |
+| CHG-IMPL-014 | `booking_pages` + `booking_page_lookup()` SECURITY DEFINER (0007) | 公開参照を安全列に限定するため | publicbook 3件 |
+| CHG-IMPL-015 | `sales_attributions.basis_points` 未一致 rule 時 0→10000 | CHECK(1..10000) 違反で referred 入場売上が 500 になる潜在バグ。主紹介者100% | parity/attribution 試験 |
+| CHG-IMPL-016 | 権限キー追加: `coupon.manage`,`notification.manage`,`import.manage`,`attribution.manage` (seed ADMIN) | parity 新規コマンドの権限分離 | parity 7件 |
+| CHG-IMPL-017 | audit-logs に `actor_display`、customers detail に `tags`、bookings 一覧に `contact` を追加 | 役割別UIが必要とする読み取り面 | 強化済み api 試験で検証 |

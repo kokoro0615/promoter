@@ -16,11 +16,14 @@ Branch: `feat/v5-jp-completion` (repo root `/home/kokoro/projects/clients/promot
 State of record: `docs/execution/status.json`, `docs/execution/findings.json`,
 `docs/execution/requirements_registry.json`, `docs/execution/blockers.md`.
 
-## Current state (verified 2026-09-19 @ 93a4ec2)
+## Current state (verified 2026-09-19 @ PHASE9_COMMIT)
 
-- unit 9 / db 7 / api 104 (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35
-  authalt:11 publicbook:3) / e2e 3 / vite build — all pass
-- evidence: `docs/execution/evidence/phase4_verify_20260919.txt`
+- unit 9 / db 7 / api 114 (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35
+  authalt:11 publicbook:3 concurrency:3 parity:7) / e2e 3 / vite build — all pass
+- spec parity: 75/78 contract ops implemented; remaining 3 are documented
+  intentional divergences (`docs/execution/api_parity.txt`)
+- ER model regenerated: `pnpm model:summary` → `docs/execution/model_summary.txt`
+- evidence: `docs/execution/evidence/phase9_verify_20260919.txt`
 
 ## Shipped phases
 
@@ -31,6 +34,11 @@ State of record: `docs/execution/status.json`, `docs/execution/findings.json`,
 - 4a `4901805` — public booking pages: slug lookup + APPROVAL_PENDING submissions (api 104)
 - 4b `93a4ec2` — role-view frontend redesign: login/MFA, promoter, kiosk,
   admin 12 tabs, platform console, public booking form (e2e 3)
+- 5 `292c772` — concurrency races (stock oversell, same-key parallel,
+  approval first-wins) + phase-4 read-field assertions (api 107)
+- 9 `PHASE9_COMMIT` — contract parity: segment replace, visit attribution,
+  order lines, templates, coupons, notification-templates, imports +
+  ER/api_parity generators + basis_points 0→10000 fix (api 114)
 
 ## Phase 1 audit result
 
@@ -40,9 +48,11 @@ path (F-001), PROCESSING receipt reclaim (F-005), and CSRF/rate-limit (F-008/9).
 
 ## Work order (remaining)
 
-Tests per vertical (concurrency/permissions/money/idempotency/RLS/E2E expansion)
-→ docs/OpenAPI parity + ER regeneration → PR.
-External-credential work stays BLOCKED behind adapter seams (see blockers.md).
+PR/staging handoff (push `feat/v5-jp-completion`, review notes, ops runbook).
+Optional depth: more E2E beyond the 3 smoke paths; tenant import job
+execution (B-06); ticket QR display; 3D floor map.
+External-credential work stays BLOCKED behind adapter seams (see blockers.md):
+PSP contract (B-01), LINE OIDC (B-02), mail delivery for email-link (B-11).
 
 ## Invariants (do not regress)
 

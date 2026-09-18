@@ -112,6 +112,87 @@ export default async function financeRoutes(app: FastifyInstance) {
     });
   });
 
+  // Manually record a sale line on an order (VIP/in-venue charges etc).
+  // source_key dedups repeated submissions at the domain level, on top of
+  // the idempotency receipt.
+  app.post('/stores/:storeId/events/:eventId/orders/:orderId/lines', {
+    schema: {
+      params: eventChild('orderId'),
+      body: body({
+        category: { type: 'string', enum: ['ADMISSION', 'VIP', 'IN_VENUE', 'CANCELLATION', 'REENTRY'] },
+        description: str(200),
+        quantity: { type: 'integer', minimum: 1 },
+        gross_minor: { type: 'integer', minimum: 0 },
+        tax_minor: { type: 'integer', minimum: 0 },
+        currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+        source_key: str(160),
+      }, ['category', 'description', 'quantity', 'gross_minor', 'tax_minor', 'currency', 'source_key']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, orderId } = req.params as { storeId: string; eventId: string; orderId: string };
+    const c0 = await caller(req, storeId, eventId, 'sales.record');
+    const b = req.body as {
+      category?: string; description?: string; quantity?: number;
+      gross_minor?: number; tax_minor?: number; currency?: string; source_key?: string;
+    };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'order.line.add', key: idemKey(req), body: { ...b, orderId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const o = await c.query(
+          `SELECT id, currency, status FROM nightclub.sales_orders
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, orderId]);
+        const order = o.rows[0];
+        if (!order) throw E.notFound('order');
+        if (order.status === 'VOID') throw E.invalid('order void');
+        if (order.currency !== b.currency) throw E.invalid('currency mismatch');
+        if (b.tax_minor! > b.gross_minor!) throw E.invalid('tax exceeds gross');
+        let line;
+        try {
+          line = await c.query(
+            `INSERT INTO nightclub.sales_lines
+               (tenant_id, store_id, event_id, order_id, segment_id, category,
+                line_kind, description, quantity, gross_minor, tax_minor,
+                currency, source_key)
+             VALUES ($1,$2,$3,$4,NULL,$5,'SALE',$6,$7,$8,$9,$10,$11)
+             RETURNING id`,
+            [g.tenantId, g.storeId, eventId, orderId, b.category,
+             b.description, b.quantity, b.gross_minor, b.tax_minor,
+             b.currency, b.source_key]);
+        } catch (err) {
+          if ((err as { code?: string }).code === '23505') {
+            throw E.conflict('source_key already recorded');
+          }
+          throw err;
+        }
+        const up = await c.query(
+          `UPDATE nightclub.sales_orders SET version=version+1,
+              updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            RETURNING version`,
+          [g.tenantId, g.storeId, eventId, orderId]);
+        await audit(c, g, {
+          action: 'order.line.add', targetType: 'sales_lines',
+          targetId: line.rows[0].id,
+          changes: { order_id: orderId, source_key: b.source_key },
+          traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            line_id: line.rows[0].id, order_id: orderId,
+            version: up.rows[0].version, trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
   app.post('/stores/:storeId/events/:eventId/orders/:orderId/payments', {
     schema: {
       params: eventChild('orderId'),

@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { withCtx } from '../lib/db.js';
 import { E } from '../lib/errors.js';
-import { uuid } from '../lib/crypto.js';
+import { uuid, sha256 } from '../lib/crypto.js';
 import { audit, emit, idemKey, withReceipt } from '../lib/tx.js';
 import {
   body, eventParams, int, isoTs, params, query, storeParam, str,
@@ -937,5 +937,237 @@ export default async function opsRoutes(app: FastifyInstance) {
             ORDER BY created_at DESC LIMIT 50`,
           [member.tenantId, storeId])).rows,
       }));
+  });
+
+  // ---- operating templates (contract: POST /templates) --------------------
+  app.post('/stores/:storeId/templates', {
+    schema: {
+      params: storeParam,
+      body: body({
+        name: str(100),
+        policy: { type: 'object' },
+      }, ['name', 'policy']),
+    },
+  }, async (req, reply) => {
+    const { storeId } = req.params as { storeId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'policy.manage');
+    const b = req.body as { name?: string; policy?: Record<string, unknown> };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: member.membershipId,
+      operation: 'template.create', key: idemKey(req), body: b,
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const ins = await c.query(
+          `INSERT INTO nightclub.operating_templates
+             (tenant_id, store_id, name, settings, created_by)
+           VALUES ($1,$2,$3,$4,$5) RETURNING id, version`,
+          [member.tenantId, storeId, b.name, JSON.stringify(b.policy),
+           member.membershipId]);
+        await audit(c, g, {
+          action: 'template.create', targetType: 'operating_templates',
+          targetId: ins.rows[0].id, changes: { name: b.name },
+          traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            template_id: ins.rows[0].id, version: ins.rows[0].version,
+            trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- coupons (contract: POST /coupons) ----------------------------------
+  // The plaintext code is stored only as a hash; conditions carry the
+  // discount terms plus the rule_keys the coupon applies to.
+  app.post('/stores/:storeId/coupons', {
+    schema: {
+      params: storeParam,
+      body: body({
+        code: { type: 'string', minLength: 4, maxLength: 40 },
+        valid_from: isoTs, valid_to: isoTs,
+        discount_kind: { type: 'string', enum: ['AMOUNT', 'PERCENT'] },
+        discount_value: { type: 'integer', minimum: 1 },
+        max_uses: { type: 'integer', minimum: 1 },
+        owner_membership_id: sUuid,
+        rule_keys: { type: 'array', items: str(100), maxItems: 50 },
+      }, ['code', 'valid_from', 'valid_to', 'discount_kind',
+        'discount_value', 'max_uses', 'rule_keys']),
+    },
+  }, async (req, reply) => {
+    const { storeId } = req.params as { storeId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'coupon.manage');
+    const b = req.body as {
+      code?: string; valid_from?: string; valid_to?: string;
+      discount_kind?: 'AMOUNT' | 'PERCENT'; discount_value?: number;
+      max_uses?: number; owner_membership_id?: string; rule_keys?: string[];
+    };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: member.membershipId,
+      operation: 'coupon.create', key: idemKey(req), body: b,
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        if (b.owner_membership_id) {
+          const m = await c.query(
+            `SELECT id FROM nightclub.memberships
+              WHERE tenant_id=$1 AND store_id=$2 AND id=$3 AND status='ACTIVE'`,
+            [member.tenantId, storeId, b.owner_membership_id]);
+          if (!m.rows[0]) throw E.invalid('owner membership not found');
+        }
+        const conditions = {
+          discount_kind: b.discount_kind, discount_value: b.discount_value,
+          max_uses: b.max_uses, rule_keys: b.rule_keys ?? [],
+        };
+        let ins;
+        try {
+          ins = await c.query(
+            `INSERT INTO nightclub.coupons
+               (tenant_id, store_id, code_hash, version, owner_membership_id,
+                conditions, valid_from, valid_to, status)
+             VALUES ($1,$2,$3,1,$4,$5,$6,$7,'ACTIVE')
+             RETURNING id, version`,
+            [member.tenantId, storeId,
+             sha256((b.code ?? '').trim().toUpperCase()),
+             b.owner_membership_id ?? null, JSON.stringify(conditions),
+             b.valid_from, b.valid_to]);
+        } catch (err) {
+          if ((err as { code?: string }).code === '23505') {
+            throw E.conflict('coupon code already registered');
+          }
+          throw err;
+        }
+        await audit(c, g, {
+          action: 'coupon.create', targetType: 'coupons',
+          targetId: ins.rows[0].id,
+          changes: { discount_kind: b.discount_kind, max_uses: b.max_uses },
+          traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            coupon_id: ins.rows[0].id, version: ins.rows[0].version,
+            trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- notification templates (contract: POST /notification-templates) ----
+  app.post('/stores/:storeId/notification-templates', {
+    schema: {
+      params: storeParam,
+      body: body({
+        key: str(80),
+        locale: { type: 'string', enum: ['ja', 'en'] },
+        body: str(4000),
+      }, ['key', 'locale', 'body']),
+    },
+  }, async (req, reply) => {
+    const { storeId } = req.params as { storeId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'notification.manage');
+    const b = req.body as { key?: string; locale?: string; body?: string };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: member.membershipId,
+      operation: 'notification_template.create', key: idemKey(req), body: b,
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        let ins;
+        try {
+          ins = await c.query(
+            `INSERT INTO nightclub.notification_templates
+               (tenant_id, store_id, template_key, locale, version, body, status)
+             VALUES ($1,$2,$3,$4,1,$5,'ACTIVE') RETURNING id, version`,
+            [member.tenantId, storeId, b.key, b.locale, b.body]);
+        } catch (err) {
+          if ((err as { code?: string }).code === '23505') {
+            throw E.conflict('template key+locale already registered');
+          }
+          throw err;
+        }
+        await audit(c, g, {
+          action: 'notification_template.create',
+          targetType: 'notification_templates', targetId: ins.rows[0].id,
+          changes: { key: b.key, locale: b.locale }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            notification_template_id: ins.rows[0].id,
+            version: ins.rows[0].version, trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- import jobs (contract: POST /imports) ------------------------------
+  // Registers a migration-file validation request. object_key references the
+  // uploaded artifact in the store's object storage; its sha256 is kept as the
+  // dedup identity in file_hash. Actual validation runs out of band (B-06).
+  app.post('/stores/:storeId/imports', {
+    schema: {
+      params: storeParam,
+      body: body({
+        source_system: str(80),
+        object_key: str(300),
+        mapping: {
+          type: 'object',
+          additionalProperties: { type: 'string' },
+        },
+      }, ['source_system', 'object_key', 'mapping']),
+    },
+  }, async (req, reply) => {
+    const { storeId } = req.params as { storeId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'import.manage');
+    const b = req.body as {
+      source_system?: string; object_key?: string;
+      mapping?: Record<string, string>;
+    };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: member.membershipId,
+      operation: 'import.create', key: idemKey(req), body: b,
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const ins = await c.query(
+          `INSERT INTO nightclub.import_jobs
+             (tenant_id, store_id, requested_by, source_system, file_hash,
+              status, mapping, validation_errors, operation_id)
+           VALUES ($1,$2,$3,$4,$5,'UPLOADED',$6,'[]',$7)
+           RETURNING id`,
+          [member.tenantId, storeId, member.membershipId, b.source_system,
+           sha256(b.object_key ?? ''), JSON.stringify(b.mapping), uuid()]);
+        await audit(c, g, {
+          action: 'import.create', targetType: 'import_jobs',
+          targetId: ins.rows[0].id,
+          changes: { source_system: b.source_system }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            import_job_id: ins.rows[0].id, status: 'UPLOADED',
+            trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
   });
 }

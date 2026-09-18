@@ -32,6 +32,8 @@ const ALL_PERMS = [
   'payment.refund', 'booking.create', 'booking.read', 'booking.decide',
   'booking.checkout', 'booking.cancel', 'booking.move', 'booking.manage',
   'booking.approve', 'report.own', 'report.export', 'sales.record',
+  'coupon.manage', 'notification.manage', 'import.manage',
+  'attribution.manage',
 ];
 const ROLE_PERMS: Record<string, string[]> = {
   ADMIN: ALL_PERMS,

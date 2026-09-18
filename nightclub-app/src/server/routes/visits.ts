@@ -1006,6 +1006,263 @@ export default async function visitRoutes(app: FastifyInstance) {
     return res.body;
   });
 
+  // ---- replace the un-entered portion of a segment with a new request ----
+  // The entered part stays on the original segment; the remainder is revoked
+  // (or truncated) and re-requested under the new rule_key/count, which goes
+  // through the same judge (permit -> authorized, else manual approval).
+  app.post('/stores/:storeId/events/:eventId/segments/:segmentId/replace', {
+    schema: {
+      params: eventChild('segmentId'),
+      body: body({
+        expected_version: version,
+        rule_key: str(40),
+        count: { type: 'integer', minimum: 1, maximum: 200 },
+        reason: str(500),
+      }, ['expected_version', 'rule_key', 'count', 'reason']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, segmentId } = req.params as { storeId: string; eventId: string; segmentId: string };
+    const caller = await visitCaller(req, storeId, eventId, 'visit.edit');
+    const b = req.body as {
+      expected_version?: number; rule_key?: string; count?: number; reason?: string;
+    };
+    const g = caller.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: caller.operator?.sessionId ?? caller.member.membershipId,
+      operation: 'visit.segment.replace', key: idemKey(req),
+      body: { ...b, segmentId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const s = await c.query(
+          `SELECT id, version, status, visit_id, requested_count,
+                  authorized_count, first_entered_count, required_customer_id
+             FROM nightclub.admission_segments
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, segmentId]);
+        const seg = s.rows[0];
+        if (!seg) throw E.notFound('segment');
+        if (seg.version !== b.expected_version) throw E.versionConflict(seg.version);
+        if (seg.status !== 'PENDING' && seg.status !== 'AUTHORIZED') {
+          throw E.invalid(`segment ${seg.status} cannot be replaced`);
+        }
+        const entered = seg.first_entered_count as number;
+        if (seg.requested_count - entered <= 0) {
+          throw E.invalid('no un-entered portion to replace');
+        }
+        const v = await c.query(
+          `SELECT id, version, status, customer_id, referrer_membership_id
+             FROM nightclub.visits
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, seg.visit_id]);
+        const visit = v.rows[0];
+        if (!visit) throw E.notFound('visit');
+        if (visit.status !== 'ACTIVE') throw E.invalid('visit not active');
+        const policy = await publishedPolicy(c, g, eventId);
+        if (!policy) throw E.configIncomplete('no published policy');
+        const ps = policy.settings;
+        const rule = ps.price_rules.find((r) => r.rule_key === b.rule_key);
+        if (!rule) throw E.invalid(`unknown rule_key ${b.rule_key}`);
+        if (seg.status === 'AUTHORIZED') {
+          await releaseHold(c, g, eventId, segmentId,
+            (seg.authorized_count as number) - entered);
+        }
+        await c.query(
+          `UPDATE nightclub.approval_requests SET status='SUPERSEDED',
+              version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+              AND segment_id=$4 AND status='PENDING'`,
+          [g.tenantId, g.storeId, eventId, segmentId]);
+        if (entered === 0) {
+          await c.query(
+            `UPDATE nightclub.admission_segments
+                SET status='REVOKED', authorized_count=0,
+                    version=version+1, updated_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [g.tenantId, g.storeId, eventId, segmentId]);
+        } else {
+          await c.query(
+            `UPDATE nightclub.admission_segments
+                SET requested_count=$5, authorized_count=$5,
+                    version=version+1, updated_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [g.tenantId, g.storeId, eventId, segmentId, entered]);
+        }
+        const isProxy = !!caller.personal
+          && caller.member.permissions.has('visit.proxy')
+          && visit.referrer_membership_id !== caller.member.membershipId;
+        const judged = await judgeSegment(c, g, {
+          eventId, visitId: seg.visit_id, rule, count: b.count!,
+          requiredCustomer: seg.required_customer_id,
+          visitCustomer: visit.customer_id,
+          actorMembership: caller.member.membershipId,
+          referrerId: visit.referrer_membership_id, isProxy,
+          policy: ps, approvalReason: b.reason ?? null,
+          currency: ps.currency,
+        });
+        const nseg = await c.query(
+          `INSERT INTO nightclub.admission_segments
+             (tenant_id, store_id, event_id, visit_id, price_rule_id, permit_id,
+              required_customer_id, requested_count, authorized_count,
+              unit_amount_minor, currency, status, authorization_method,
+              snapshot, entry_until)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+           RETURNING id, version`,
+          [g.tenantId, g.storeId, eventId, seg.visit_id, judged.priceRuleId,
+           judged.permitId, seg.required_customer_id, b.count,
+           judged.status === 'AUTHORIZED' ? b.count : 0,
+           rule.amount_minor, ps.currency, judged.status,
+           judged.method, JSON.stringify(judged.snapshot), rule.entry_to]);
+        if (judged.buckets.length && judged.status === 'AUTHORIZED') {
+          await holdQuota(c, g, {
+            eventId, segmentId: nseg.rows[0].id,
+            buckets: judged.buckets, count: b.count!,
+          });
+        }
+        if (judged.status === 'PENDING') {
+          await c.query(
+            `INSERT INTO nightclub.approval_requests
+               (tenant_id, store_id, event_id, segment_id, requested_by,
+                request_version, segment_version, reason, status)
+             VALUES ($1,$2,$3,$4,$5,1,$6,$7,'PENDING')`,
+            [g.tenantId, g.storeId, eventId, nseg.rows[0].id,
+             caller.member.membershipId, nseg.rows[0].version,
+             b.reason ?? 'manual approval required']);
+        }
+        const summary = await visitSummary(c, g, seg.visit_id, eventId);
+        await emit(c, g, {
+          eventId, eventType: 'visit.upserted', aggregateType: 'visit',
+          aggregateId: seg.visit_id, aggregateVersion: visit.version,
+          payload: { visit: summary }, traceId: req.traceId,
+        });
+        await audit(c, g, {
+          action: 'visit.segment.replace', targetType: 'admission_segments',
+          targetId: segmentId,
+          changes: {
+            replacement_segment_id: nseg.rows[0].id,
+            rule_key: b.rule_key, count: b.count,
+          },
+          reason: b.reason ?? null, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            segment_id: nseg.rows[0].id, replaced_segment_id: segmentId,
+            status: judged.status, visit: summary, trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- correct the referrer attribution of a visit (reason required) ------
+  // Re-points the visit and any sales_attributions on its order lines to the
+  // new referrer; lines with no attribution gain one when a referrer is set.
+  app.post('/stores/:storeId/events/:eventId/visits/:visitId/attribution', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({
+        expected_version: version,
+        referrer_membership_id: sUuid,
+        reason: str(500),
+      }, ['expected_version', 'referrer_membership_id', 'reason']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string };
+    const caller = await visitCaller(req, storeId, eventId, 'attribution.manage');
+    const b = req.body as {
+      expected_version?: number; referrer_membership_id?: string; reason?: string;
+    };
+    const g = caller.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: caller.operator?.sessionId ?? caller.member.membershipId,
+      operation: 'visit.attribution', key: idemKey(req),
+      body: { ...b, visitId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const v = await c.query(
+          `SELECT id, version, status, referrer_membership_id
+             FROM nightclub.visits
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, visitId]);
+        const visit = v.rows[0];
+        if (!visit) throw E.notFound('visit');
+        if (visit.version !== b.expected_version) {
+          throw E.versionConflict(visit.version);
+        }
+        if (visit.status !== 'ACTIVE') throw E.invalid('visit not active');
+        if (visit.referrer_membership_id === b.referrer_membership_id) {
+          throw E.invalid('attribution unchanged');
+        }
+        const m = await c.query(
+          `SELECT id FROM nightclub.memberships
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3 AND status='ACTIVE'`,
+          [g.tenantId, g.storeId, b.referrer_membership_id]);
+        if (!m.rows[0]) throw E.invalid('referrer membership not found');
+        const old = visit.referrer_membership_id as string | null;
+        await c.query(
+          `UPDATE nightclub.visits
+              SET referrer_membership_id=$5, version=version+1,
+                  updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, visitId, b.referrer_membership_id]);
+        // Re-point existing line attributions recorded under the old referrer.
+        await c.query(
+          `UPDATE nightclub.sales_attributions sa
+              SET referrer_membership_id=$5, version=sa.version+1,
+                  updated_at=CURRENT_TIMESTAMP
+             FROM nightclub.sales_lines sl
+             JOIN nightclub.sales_orders o
+               ON o.tenant_id=sl.tenant_id AND o.store_id=sl.store_id
+              AND o.event_id=sl.event_id AND o.id=sl.order_id
+            WHERE sa.tenant_id=$1 AND sa.store_id=$2 AND sa.event_id=$3
+              AND sa.sales_line_id=sl.id AND o.visit_id=$4
+              AND sa.referrer_membership_id IS NOT DISTINCT FROM $6`,
+          [g.tenantId, g.storeId, eventId, visitId,
+           b.referrer_membership_id, old]);
+        // Lines without any attribution gain one under the new referrer.
+        // A visit has a single primary referrer -> 100% (basis_points is the
+        // attribution share, not the reward rate; CHECK requires 1..10000).
+        await c.query(
+          `INSERT INTO nightclub.sales_attributions
+             (tenant_id, store_id, event_id, sales_line_id,
+              referrer_membership_id, basis_points, version)
+           SELECT sl.tenant_id, sl.store_id, sl.event_id, sl.id, $4, 10000, 1
+             FROM nightclub.sales_lines sl
+             JOIN nightclub.sales_orders o
+               ON o.tenant_id=sl.tenant_id AND o.store_id=sl.store_id
+              AND o.event_id=sl.event_id AND o.id=sl.order_id
+            WHERE sl.tenant_id=$1 AND sl.store_id=$2 AND sl.event_id=$3
+              AND o.visit_id=$5
+              AND NOT EXISTS (
+                SELECT 1 FROM nightclub.sales_attributions sa
+                 WHERE sa.tenant_id=sl.tenant_id AND sa.store_id=sl.store_id
+                   AND sa.event_id=sl.event_id AND sa.sales_line_id=sl.id)`,
+          [g.tenantId, g.storeId, eventId, b.referrer_membership_id, visitId]);
+        const summary = await visitSummary(c, g, visitId, eventId);
+        await emit(c, g, {
+          eventId, eventType: 'visit.upserted', aggregateType: 'visit',
+          aggregateId: visitId, aggregateVersion: visit.version + 1,
+          payload: { visit: summary }, traceId: req.traceId,
+        });
+        await audit(c, g, {
+          action: 'visit.attribution', targetType: 'visits', targetId: visitId,
+          changes: {
+            referrer_membership_id: { from: old, to: b.referrer_membership_id },
+          },
+          reason: b.reason ?? null, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { visit: summary, trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
   // ---- companion members on a visit (F-015) --------------------------------
   app.post('/stores/:storeId/events/:eventId/visits/:visitId/members', {
     schema: {
@@ -1490,9 +1747,11 @@ async function recordAdmissionSale(c: Client, g: Guc, a: {
           AND valid_from <= CURRENT_TIMESTAMP AND valid_to > CURRENT_TIMESTAMP
         ORDER BY referrer_membership_id NULLS LAST LIMIT 1`,
       [g.tenantId, g.storeId, referrer]);
+    // A visit's primary referrer carries the full share when no reward rule
+    // narrows it (CHECK requires basis_points 1..10000).
     const bp = rr.rows[0]
-      ? (rr.rows[0].conditions as { basis_points?: number }).basis_points ?? 0
-      : 0;
+      ? (rr.rows[0].conditions as { basis_points?: number }).basis_points ?? 10000
+      : 10000;
     await c.query(
       `INSERT INTO nightclub.sales_attributions
          (tenant_id, store_id, event_id, sales_line_id, referrer_membership_id,

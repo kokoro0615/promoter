@@ -11,7 +11,7 @@
   UQ: [['token_hash']]
   FK ['user_id'] -> app_users(['id'])
 == stores [tenant]
-  id:uuid*, tenant_id:uuid*, name:text*, timezone:text*, currency:char(3)*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  id:uuid*, tenant_id:uuid*, name:text*, timezone:text*, currency:char(3)*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*, settings:jsonb*
   UQ: [['tenant_id', 'id']]
   FK ['tenant_id'] -> tenants(['id'])
 == memberships [store]
@@ -48,7 +48,7 @@
   FK ['tenant_id', 'store_id', 'issued_by'] -> memberships(['tenant_id', 'store_id', 'id'])
   FK ['used_by'] -> app_users(['id'])
 == events [store]
-  id:uuid*, tenant_id:uuid*, store_id:uuid*, name:text*, opens_at:timestamptz*, closes_at:timestamptz*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, name:text*, opens_at:timestamptz*, closes_at:timestamptz*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*, is_private:boolean*
   UQ: [['tenant_id', 'store_id', 'id']]
   FK ['tenant_id'] -> tenants(['id'])
   FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
@@ -266,7 +266,7 @@
   FK ['tenant_id'] -> tenants(['id'])
   FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
 == bookings [event]
-  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, visit_id:uuid*, customer_id:uuid, party_count:integer*, starts_at:timestamptz*, ends_at:timestamptz*, hold_expires_at:timestamptz, status:text*, admission_pricing:text*, minimum_minor:bigint*, deposit_minor:bigint*, currency:char(3)*, policy_snapshot:jsonb*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, visit_id:uuid, customer_id:uuid, party_count:integer*, starts_at:timestamptz*, ends_at:timestamptz*, hold_expires_at:timestamptz, status:text*, admission_pricing:text*, minimum_minor:bigint*, deposit_minor:bigint*, currency:char(3)*, policy_snapshot:jsonb*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*, contact:jsonb
   UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'visit_id', 'id']]
   FK ['tenant_id'] -> tenants(['id'])
   FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
@@ -290,7 +290,7 @@
   FK ['tenant_id', 'store_id', 'event_id', 'booking_id'] -> bookings(['tenant_id', 'store_id', 'event_id', 'id'])
   FK ['tenant_id', 'store_id', 'table_id'] -> venue_tables(['tenant_id', 'store_id', 'id'])
 == sales_orders [event]
-  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, kind:text*, visit_id:uuid*, booking_id:uuid, currency:char(3)*, status:text*, external_system:text, external_order_id:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, kind:text*, visit_id:uuid, booking_id:uuid, currency:char(3)*, status:text*, external_system:text, external_order_id:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
   UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'external_system', 'external_order_id'], ['tenant_id', 'store_id', 'event_id', 'id', 'currency']]
   FK ['tenant_id'] -> tenants(['id'])
   FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
@@ -451,7 +451,7 @@
   FK ['tenant_id'] -> tenants(['id'])
   FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
 == notification_jobs [event]
-  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, outbox_event_id:uuid, recipient_membership_id:uuid, recipient_customer_id:uuid, channel:text*, dedup_key:text*, status:text*, scheduled_at:timestamptz*, attempts:integer*, provider_reference:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid, outbox_event_id:uuid, recipient_membership_id:uuid, recipient_customer_id:uuid, channel:text*, dedup_key:text*, status:text*, scheduled_at:timestamptz*, attempts:integer*, provider_reference:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*, payload:jsonb*
   UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'dedup_key']]
   FK ['tenant_id'] -> tenants(['id'])
   FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
@@ -460,7 +460,7 @@
   FK ['tenant_id', 'store_id', 'recipient_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
   FK ['tenant_id', 'store_id', 'recipient_customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
 == integration_events [store]
-  id:uuid*, tenant_id:uuid*, store_id:uuid*, provider:text*, provider_account:text*, external_event_id:text*, payload_hash:text*, payload:jsonb*, status:text*, attempts:integer*, error_code:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  id:uuid*, tenant_id:uuid, store_id:uuid, provider:text*, provider_account:text*, external_event_id:text*, payload_hash:text*, payload:jsonb*, status:text*, attempts:integer*, error_code:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
   UQ: [['tenant_id', 'store_id', 'id'], ['provider', 'provider_account', 'external_event_id']]
   FK ['tenant_id'] -> tenants(['id'])
   FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
@@ -484,3 +484,114 @@
   FK ['tenant_id'] -> tenants(['id'])
   FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
   FK ['tenant_id', 'store_id', 'requested_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== platform_operators [global]
+  user_id:uuid*, display_name:text*, created_at:timestamptz*
+  UQ: [['user_id']]
+  FK ['user_id'] -> app_users(['id'])
+== plans [global]
+  id:uuid*, code:text*, name:text*, features:jsonb*, limits:jsonb*, monthly_price_minor:bigint, currency:char(3)*, status:text*, created_at:timestamptz*
+  UQ: [['code']]
+== tenant_subscriptions [tenant]
+  id:uuid*, tenant_id:uuid*, plan_id:uuid*, status:text*, trial_ends_at:timestamptz, current_period_start:timestamptz*, current_period_end:timestamptz*, canceled_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['plan_id'] -> plans(['id'])
+== billing_invoices [tenant]
+  id:uuid*, tenant_id:uuid*, subscription_id:uuid*, period_start:timestamptz*, period_end:timestamptz*, amount_minor:bigint*, currency:char(3)*, status:text*, due_at:timestamptz, paid_at:timestamptz, external_ref:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'id'], ['tenant_id', 'subscription_id', 'period_start']]
+  FK ['tenant_id', 'subscription_id'] -> tenant_subscriptions(['tenant_id', 'id'])
+== tenant_deletion_requests [tenant]
+  id:uuid*, tenant_id:uuid*, requested_by:uuid*, status:text*, execute_after:timestamptz*, executed_at:timestamptz, export_object_key:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['requested_by'] -> app_users(['id'])
+== tenant_onboarding [tenant]
+  tenant_id:uuid*, item_key:text*, done_at:timestamptz, done_by:uuid
+  UQ: [['tenant_id', 'item_key']]
+  FK ['tenant_id'] -> tenants(['id'])
+== ticket_products [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, code:text*, name:text*, price_minor:bigint*, currency:char(3)*, sales_from:timestamptz*, sales_to:timestamptz*, quantity_limit:integer, per_order_limit:integer*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'code']]
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+== ticket_orders [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, product_id:uuid*, buyer_membership_id:uuid, buyer_customer_id:uuid, buyer_name:text*, quantity:integer*, amount_minor:bigint*, currency:char(3)*, status:text*, payment_id:uuid, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id']]
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'product_id'] -> ticket_products(['tenant_id', 'store_id', 'event_id', 'id'])
+== ticket_instances [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, order_id:uuid*, product_id:uuid*, token_hash:text*, status:text*, redeemed_visit_id:uuid, redeemed_at:timestamptz, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'token_hash']]
+  FK ['tenant_id', 'store_id', 'event_id', 'order_id'] -> ticket_orders(['tenant_id', 'store_id', 'event_id', 'id'])
+== products [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, sku:text*, name:text*, kind:text*, price_minor:bigint*, currency:char(3)*, stock_tracked:boolean*, stock_on_hand:integer*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'sku']]
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+== stock_movements [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, product_id:uuid*, kind:text*, quantity:integer*, ref:text, created_by:uuid, operation_id:uuid*, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'operation_id', 'product_id', 'kind']]
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'product_id'] -> products(['tenant_id', 'store_id', 'id'])
+== bottle_keeps [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, customer_id:uuid*, product_id:uuid*, order_id:uuid, label:text*, opened_at:timestamptz*, expires_at:timestamptz*, remaining_percent:integer*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id']]
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'product_id'] -> products(['tenant_id', 'store_id', 'id'])
+== platform_command_receipts [global]
+  id:uuid*, actor_key:text*, operation_key:text*, operation_name:text*, request_hash:text*, status:text*, http_status:integer, response_body:jsonb, expires_at:timestamptz*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['actor_key', 'operation_name', 'operation_key']]
+== platform_audit_logs [tenant]
+  id:uuid*, tenant_id:uuid, actor_user_id:uuid*, action:text*, target_type:text*, target_id:uuid*, before_version:integer, after_version:integer, changes:jsonb*, reason:text, trace_id:uuid*, created_at:timestamptz*
+== quotations [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, booking_id:uuid, status:text*, total_minor:bigint*, currency:char(3)*, valid_until:timestamptz, note:text, issued_by:uuid, issued_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id']]
+  FK ['tenant_id', 'store_id', 'event_id', 'booking_id'] -> bookings(['tenant_id', 'store_id', 'event_id', 'id'])
+== quotation_lines [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, quotation_id:uuid*, description:text*, quantity:integer*, unit_minor:bigint*, amount_minor:bigint*, sort:integer*, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id']]
+  FK ['tenant_id', 'store_id', 'event_id', 'quotation_id'] -> quotations(['tenant_id', 'store_id', 'event_id', 'id'])
+== booking_pages [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, slug:text*, status:text*, title:text*, message:text, collect_phone:boolean*, max_party:integer*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['slug']]
+== notification_reads [store]
+  tenant_id:uuid*, store_id:uuid*, notification_job_id:uuid*, membership_id:uuid*, read_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'notification_job_id', 'membership_id']]
+== email_login_tokens [global]
+  id:uuid*, email:text*, token_hash:text*, user_id:uuid, expires_at:timestamptz*, used_at:timestamptz, attempts:integer*, created_at:timestamptz*
+  UQ: [['token_hash']]
+== mfa_credentials [global]
+  id:uuid*, user_id:uuid*, kind:text*, secret:text*, status:text*, verified_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['user_id', 'kind']]
+  FK ['user_id'] -> app_users(['id'])
+== mfa_recovery_codes [global]
+  id:uuid*, user_id:uuid*, code_hash:text*, used_at:timestamptz, created_at:timestamptz*
+  UQ: [['user_id', 'code_hash']]
+  FK ['user_id'] -> app_users(['id'])
+== customer_tags [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, tag_key:text*, label:text*, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'tag_key']]
+== customer_tag_assignments [store]
+  tenant_id:uuid*, store_id:uuid*, customer_id:uuid*, tag_id:uuid*, assigned_by:uuid, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'customer_id', 'tag_id']]
+  FK ['tenant_id', 'store_id', 'customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'tag_id'] -> customer_tags(['tenant_id', 'store_id', 'id'])
+== campaigns [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, name:text*, channel:text*, segment:jsonb*, body:text*, status:text*, scheduled_at:timestamptz, sent_at:timestamptz, created_by:uuid*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id']]
+== campaign_deliveries [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, campaign_id:uuid*, recipient_customer_id:uuid, recipient_membership_id:uuid, dedup_key:text*, status:text*, provider_reference:text, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'campaign_id', 'dedup_key']]
+  FK ['tenant_id', 'store_id', 'campaign_id'] -> campaigns(['tenant_id', 'store_id', 'id'])
+== forecast_runs [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid, model:text*, horizon_days:integer*, metrics:jsonb*, generated_by:uuid, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id']]
+== stocktakes [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, status:text*, started_by:uuid*, closed_by:uuid, closed_at:timestamptz, note:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id']]
+== stocktake_lines [store]
+  tenant_id:uuid*, store_id:uuid*, stocktake_id:uuid*, product_id:uuid*, expected_qty:integer*, counted_qty:integer, counted_by:uuid, counted_at:timestamptz
+  UQ: [['tenant_id', 'store_id', 'stocktake_id', 'product_id']]
+  FK ['tenant_id', 'store_id', 'stocktake_id'] -> stocktakes(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'product_id'] -> products(['tenant_id', 'store_id', 'id'])

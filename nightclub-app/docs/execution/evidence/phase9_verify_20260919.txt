@@ -1,0 +1,40 @@
+Phase 9 verification — contract parity + test expansion
+========================================================
+date: 2026-09-19 (JST)
+branch: feat/v5-jp-completion
+
+## Scope
+- Implemented the remaining 7 spec contract endpoints:
+  POST /stores/:storeId/events/:eventId/segments/:segmentId/replace (visit.edit)
+  POST /stores/:storeId/events/:eventId/visits/:visitId/attribution (attribution.manage)
+  POST /stores/:storeId/events/:eventId/orders/:orderId/lines (sales.record)
+  POST /stores/:storeId/templates (policy.manage)
+  POST /stores/:storeId/coupons (coupon.manage)
+  POST /stores/:storeId/notification-templates (notification.manage)
+  POST /stores/:storeId/imports (import.manage)
+- New permission keys seeded on ADMIN: coupon.manage, notification.manage,
+  import.manage, attribution.manage.
+- Bug found & fixed by execution testing:
+  * sales_attributions basis_points CHECK(1..10000): unattributed-line insert
+    and recordAdmissionSale fallback used 0 -> 23514. Primary referrer now
+    carries 10000 (full share) when no reward rule narrows it.
+  * visit.version missing from segment-replace SELECT -> outbox NOT NULL.
+  * ambiguous `version` in attribution UPDATE -> qualified sa.version.
+- New tools: tools/model_summary.mjs (pnpm model:summary),
+  tools/api_parity.mjs (pnpm api:parity).
+- Regenerated docs/execution/model_summary.txt (600 lines, 0004-0007 tables
+  included) and docs/execution/api_parity.txt.
+
+## Test results (executed)
+- tests/api/parity.test.ts: 7/7 pass
+  (templates create, coupons create+dup409+denied, notification-templates
+   create+dup409, imports UPLOADED, order lines add+source_key dedup 409+
+   currency 422 + GET detail, attribution 200 + stale 409, segment replace
+   201 AUTHORIZED + old REVOKED + stale 409)
+- pnpm verify: tsc clean; unit 9/9; db/RLS 7/7; api 114/114
+  (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35 authalt:11 publicbook:3
+   concurrency:3 parity:7) — all pass
+- docs/execution/api_parity.txt: spec ops implemented 75/78; remaining 3 are
+  documented intentional divergences (exports{id} -> list+download;
+  public bookings -> booking-pages/{slug}/submissions; public checkout not
+  implemented by design — platform never moves store funds).
