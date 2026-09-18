@@ -268,7 +268,7 @@ export default async function vipRoutes(app: FastifyInstance) {
       receiptTtlSec: config.ttl.receiptSec,
       run: async () => {
         const bk = await c.query(
-          `SELECT b.id, b.version, b.status, b.deposit_minor, b.currency
+          `SELECT b.id, b.version, b.status, b.deposit_minor, b.currency, b.visit_id
              FROM nightclub.bookings b
             WHERE b.tenant_id=$1 AND b.store_id=$2 AND b.event_id=$3 AND b.id=$4
             FOR UPDATE`, [g.tenantId, g.storeId, eventId, bookingId]);
@@ -277,17 +277,35 @@ export default async function vipRoutes(app: FastifyInstance) {
         if (!['HOLD', 'PAYMENT_PENDING', 'APPROVAL_PENDING'].includes(row.status)) {
           throw E.invalid(`booking ${row.status} not payable`);
         }
+        if (Number(row.deposit_minor) <= 0) throw E.invalid('no deposit required');
         const ref = `devpsp_${uuid()}`;
+        // Deposit is a VIP sale: order + line first so the money trail and
+        // webhook can resolve the booking via payment.order_id -> booking_id.
+        const so = await c.query(
+          `INSERT INTO nightclub.sales_orders
+             (tenant_id, store_id, event_id, kind, visit_id, booking_id, currency, status)
+           VALUES ($1,$2,$3,'VIP',$4,$5,$6,'DRAFT') RETURNING id`,
+          [g.tenantId, g.storeId, eventId, row.visit_id ?? null, bookingId, row.currency]);
+        const orderId = so.rows[0].id as string;
+        const opId = uuid();
+        await c.query(
+          `INSERT INTO nightclub.sales_lines
+             (tenant_id, store_id, event_id, order_id, category,
+              line_kind, description, quantity, gross_minor, tax_minor,
+              currency, source_key)
+           VALUES ($1,$2,$3,$4,'VIP','SALE','booking deposit',1,$5,0,$6,$7)`,
+          [g.tenantId, g.storeId, eventId, orderId,
+           row.deposit_minor, row.currency, `deposit:${bookingId}`]);
         const p = await c.query(
           `INSERT INTO nightclub.payments
              (tenant_id, store_id, event_id, recorded_by, operator_session_id,
               order_id, method, purpose, amount_minor, currency, status,
               provider, provider_account, provider_reference, operation_id)
-           VALUES ($1,$2,$3,$4,$5,NULL,'PSP','DEPOSIT',$6,$7,'CREATED',
-                   'devpsp','dev',$8,$9) RETURNING id`,
+           VALUES ($1,$2,$3,$4,$5,$6,'PSP','DEPOSIT',$7,$8,'CREATED',
+                   'devpsp','dev',$9,$10) RETURNING id`,
           [g.tenantId, g.storeId, eventId, c0.member.membershipId,
-           c0.operator?.sessionId ?? null, row.deposit_minor, row.currency,
-           ref, uuid()]);
+           c0.operator?.sessionId ?? null, orderId, row.deposit_minor,
+           row.currency, ref, opId]);
         await c.query(
           `UPDATE nightclub.bookings SET status='PAYMENT_PENDING',
               version=version+1, updated_at=CURRENT_TIMESTAMP
@@ -324,52 +342,116 @@ export default async function vipRoutes(app: FastifyInstance) {
     if (!b?.provider_reference || !b.result || !b.signature) {
       throw E.invalid('provider_reference, result, signature required');
     }
+    if (!['success', 'failure'].includes(b.result)) throw E.invalid('result');
     const expect = devSign(b.provider_reference, b.result);
     if (expect !== b.signature) throw E.unauthenticated('bad signature');
-    // Idempotent: external_event_id unique per provider account.
+    // Phase 1 (bare system scope): locate the payment by its globally-unique
+    // provider reference so tenant/store GUCs can be set for the real work.
+    // Unmatched references are ACKed but recorded nowhere — no tenant exists
+    // to file them under.
+    const found = await withSystem(async (c) => (await c.query(
+      `SELECT tenant_id, store_id, event_id, id, order_id, status
+         FROM nightclub.payments
+        WHERE provider='devpsp' AND provider_account='dev'
+          AND provider_reference=$1`,
+      [b.provider_reference])).rows[0]);
+    if (!found) return { accepted: true, matched: false };
+    const guc = {
+      tenantId: found.tenant_id as string, storeId: found.store_id as string,
+    };
+    // Phase 2 (tenant-scoped system tx): dedup insert is the idempotency
+    // gate; everything after it is atomic with the recorded event.
     return withSystem(async (c) => {
-      const seen = await c.query(
-        `SELECT id, status FROM nightclub.integration_events
-          WHERE provider='devpsp' AND provider_account='dev'
-            AND external_event_id=$1`,
-        [`${b.provider_reference}:${b.result}`]);
-      if (seen.rows[0]) return { accepted: true, duplicate: true };
-      const r = await c.query(
-        `UPDATE nightclub.payments SET status=$2, version=version+1,
-            updated_at=CURRENT_TIMESTAMP
-          WHERE provider='devpsp' AND provider_account='dev'
-            AND provider_reference=$1 AND status IN ('CREATED','PROCESSING')
-          RETURNING tenant_id, store_id, event_id, id, order_id`,
-        [b.provider_reference, b.result === 'success' ? 'SUCCEEDED' : 'FAILED']);
-      const payment = r.rows[0];
-      if (payment && b.result === 'success') {
-        await c.query(
-          `UPDATE nightclub.bookings SET status='CONFIRMED', version=version+1,
-              updated_at=CURRENT_TIMESTAMP
-            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
-              AND status='PAYMENT_PENDING'
-              AND id IN (SELECT booking_id FROM nightclub.sales_orders
-                          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
-                            AND id=$4)`,
-          [payment.tenant_id, payment.store_id, payment.event_id, payment.order_id]);
-        // booking-linked payments store order_id NULL; find booking via hold
-        await c.query(
-          `UPDATE nightclub.table_allocations SET status='CONFIRMED',
-              version=version+1, updated_at=CURRENT_TIMESTAMP
-            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND status='HELD'`,
-          [payment.tenant_id, payment.store_id, payment.event_id]);
-      }
-      await c.query(
+      const dup = await c.query(
         `INSERT INTO nightclub.integration_events
            (tenant_id, store_id, provider, provider_account, external_event_id,
             payload_hash, payload, status)
-         VALUES ($1,$2,'devpsp','dev',$3,$4,$5,'PROCESSED')`,
-        [payment?.tenant_id ?? '00000000-0000-0000-0000-000000000000',
-         payment?.store_id ?? '00000000-0000-0000-0000-000000000000',
+         VALUES ($1,$2,'devpsp','dev',$3,$4,$5,'PROCESSED')
+         ON CONFLICT (provider, provider_account, external_event_id)
+         DO NOTHING RETURNING id`,
+        [found.tenant_id, found.store_id,
          `${b.provider_reference}:${b.result}`,
          sha256(JSON.stringify(b)), JSON.stringify(b)]);
+      if (!dup.rows[0]) return { accepted: true, duplicate: true };
+      const r = await c.query(
+        `UPDATE nightclub.payments SET status=$2, version=version+1,
+            updated_at=CURRENT_TIMESTAMP
+          WHERE tenant_id=$3 AND store_id=$4 AND id=$1
+            AND status IN ('CREATED','PROCESSING')
+          RETURNING event_id, order_id`,
+        [found.id, b.result === 'success' ? 'SUCCEEDED' : 'FAILED',
+         found.tenant_id, found.store_id]);
+      const payment = r.rows[0];
+      if (!payment) return { accepted: true, duplicate: true };
+      // Resolve the booking through the deposit sales order. Only that
+      // booking's rows are touched — never other bookings' allocations.
+      const bk = await c.query(
+        `SELECT b.id, b.status, b.version FROM nightclub.bookings b
+          JOIN nightclub.sales_orders so
+            ON so.tenant_id=b.tenant_id AND so.store_id=b.store_id
+           AND so.event_id=b.event_id AND so.booking_id=b.id
+          WHERE b.tenant_id=$1 AND b.store_id=$2 AND b.event_id=$3
+            AND so.id=$4 FOR UPDATE OF b`,
+        [found.tenant_id, found.store_id, payment.event_id, payment.order_id]);
+      const booking = bk.rows[0];
+      const g = { scope: 'system' as const, ...guc };
+      if (b.result === 'success') {
+        if (booking?.status === 'PAYMENT_PENDING') {
+          await c.query(
+            `UPDATE nightclub.bookings SET status='CONFIRMED', version=version+1,
+                updated_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [found.tenant_id, found.store_id, payment.event_id, booking.id]);
+          await c.query(
+            `UPDATE nightclub.sales_orders SET status='FINALIZED', version=version+1,
+                updated_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [found.tenant_id, found.store_id, payment.event_id, payment.order_id]);
+          await c.query(
+            `UPDATE nightclub.table_allocations SET status='CONFIRMED',
+                version=version+1, updated_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+                AND booking_id=$4 AND status='HELD'`,
+            [found.tenant_id, found.store_id, payment.event_id, booking.id]);
+          // Allocate the deposit payment to the deposit sale line.
+          const line = await c.query(
+            `SELECT id, gross_minor, currency FROM nightclub.sales_lines
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+                AND order_id=$4 AND source_key=$5`,
+            [found.tenant_id, found.store_id, payment.event_id,
+             payment.order_id, `deposit:${booking.id}`]);
+          if (line.rows[0]) {
+            await c.query(
+              `INSERT INTO nightclub.payment_allocations
+                 (tenant_id, store_id, event_id, sales_line_id, payment_id,
+                  order_id, amount_minor, currency, operation_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+              [found.tenant_id, found.store_id, payment.event_id,
+               line.rows[0].id, found.id, payment.order_id,
+               line.rows[0].gross_minor, line.rows[0].currency, uuid()]);
+          }
+          await emit(c, g, {
+            eventId: payment.event_id, eventType: 'booking.confirmed',
+            aggregateType: 'booking', aggregateId: booking.id,
+            aggregateVersion: booking.version + 1,
+            payload: { payment_id: found.id }, traceId: req.traceId,
+          });
+        }
+      } else if (booking?.status === 'PAYMENT_PENDING') {
+        await c.query(
+          `UPDATE nightclub.bookings SET status='PAYMENT_EXCEPTION',
+              version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [found.tenant_id, found.store_id, payment.event_id, booking.id]);
+        await emit(c, g, {
+          eventId: payment.event_id, eventType: 'booking.payment_failed',
+          aggregateType: 'booking', aggregateId: booking.id,
+          aggregateVersion: booking.version + 1,
+          payload: { payment_id: found.id }, traceId: req.traceId,
+        });
+      }
       return { accepted: true, duplicate: false };
-    });
+    }, {}, guc);
   });
 
   app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/move', async (req, reply) => {
@@ -402,9 +484,10 @@ export default async function vipRoutes(app: FastifyInstance) {
                (tenant_id, store_id, event_id, booking_id, table_id,
                 occupied_during, status)
              VALUES ($1,$2,$3,$4,$5,tstzrange($6,$7,'[)'),
-                     (SELECT status FROM nightclub.bookings
-                       WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
-                       LIMIT 1))`,
+                     CASE WHEN (SELECT status FROM nightclub.bookings
+                                 WHERE tenant_id=$1 AND store_id=$2
+                                   AND event_id=$3 AND id=$4) = 'CONFIRMED'
+                          THEN 'CONFIRMED' ELSE 'HELD' END)`,
             [g.tenantId, g.storeId, eventId, bookingId, b.table_id, b.starts_at, b.ends_at]);
         } catch (e) {
           if ((e as { code?: string }).code === '23P01') throw E.tableUnavailable();

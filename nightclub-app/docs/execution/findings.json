@@ -9,7 +9,9 @@
       "area": "vip.ts dev PSP webhook",
       "detail": "booking checkout payments are inserted with order_id=NULL; the webhook then tries to confirm the booking via `bookings.id IN (SELECT booking_id FROM sales_orders WHERE id = payment.order_id)` which can never match, so a successful webhook leaves the booking PAYMENT_PENDING forever. Separately, `UPDATE table_allocations ... WHERE event_id AND status='HELD'` has no booking_id filter, so one successful deposit confirms EVERY held allocation in the event (cross-booking contamination).",
       "evidence": "src/server/routes/vip.ts:281-360",
-      "remediation": "store booking_id on the payment row (or a payment_bookings link), confirm exactly that booking and only its allocations; add regression test"
+      "remediation": "store booking_id on the payment row (or a payment_bookings link), confirm exactly that booking and only its allocations; add regression test",
+      "status": "fixed",
+      "fix": "fixed: checkout creates VIP sales_order+line+payment (order_id linked); webhook resolves tenant via system-lookup policy, dedups via integration_events ON CONFLICT, confirms only that booking + its allocations; regression tests/api/vip.test.ts"
     },
     {
       "id": "F-002",
@@ -17,7 +19,9 @@
       "area": "finance.ts my-performance",
       "detail": "joins `ae.visit_id = v.visit_id`; visits has no visit_id column so the query raises an error and the endpoint 500s (untested path).",
       "evidence": "src/server/routes/finance.ts:337",
-      "remediation": "join ae.visit_id = v.id; add test"
+      "remediation": "join ae.visit_id = v.id; add test",
+      "status": "fixed",
+      "fix": "fixed: ae.visit_id = v.id"
     },
     {
       "id": "F-003",
@@ -25,7 +29,9 @@
       "area": "ops.ts settlement finalize",
       "detail": "status transition does not increment version; optimistic concurrency on the row is stale afterwards.",
       "evidence": "src/server/routes/ops.ts:325-332",
-      "remediation": "add version=version+1; test finalize-then-refinalize"
+      "remediation": "add version=version+1; test finalize-then-refinalize",
+      "status": "fixed",
+      "fix": "fixed: version=version+1 on finalize"
     },
     {
       "id": "F-004",
@@ -33,7 +39,9 @@
       "area": "vip.ts booking move",
       "detail": "new table_allocation.status is copied verbatim from bookings.status; for a PAYMENT_PENDING booking this inserts 'PAYMENT_PENDING' into a CHECK-constrained enum and produces a 500 instead of a controlled result.",
       "evidence": "src/server/routes/vip.ts:400-408",
-      "remediation": "map booking status -> allocation status (HOLD->HELD, CONFIRMED->CONFIRMED, PAYMENT_PENDING->HELD); test"
+      "remediation": "map booking status -> allocation status (HOLD->HELD, CONFIRMED->CONFIRMED, PAYMENT_PENDING->HELD); test",
+      "status": "fixed",
+      "fix": "fixed: allocation status mapped via CASE (CONFIRMED->CONFIRMED else HELD)"
     },
     {
       "id": "F-005",
@@ -41,7 +49,9 @@
       "area": "tx.ts withReceipt / platformReceipt",
       "detail": "a receipt row stuck in PROCESSING (handler crashed after insert) blocks the same idempotency key until the 24h TTL because expires_at is never consulted on the conflict path.",
       "evidence": "src/server/lib/tx.ts:86-101,177-187",
-      "remediation": "on conflict, if status='PROCESSING' and expires_at < now, delete/reclaim the receipt row"
+      "remediation": "on conflict, if status='PROCESSING' and expires_at < now, delete/reclaim the receipt row",
+      "status": "fixed",
+      "fix": "fixed: expired receipts reclaimed (delete+retry) in withReceipt/platformReceipt"
     },
     {
       "id": "F-006",
@@ -49,7 +59,9 @@
       "area": "worker CSV export",
       "detail": "CSV escaper quotes but does not neutralize spreadsheet formula injection (=, +, -, @, TAB, CR leading chars). Master prompt and security_and_operations.md require CSV sanitization.",
       "evidence": "src/worker/index.ts:122-127",
-      "remediation": "prefix dangerous leading characters with a single quote; add unit test"
+      "remediation": "prefix dangerous leading characters with a single quote; add unit test",
+      "status": "fixed",
+      "fix": "fixed: CSV cells escaped for quotes/CR/LF + formula-injection tab prefix"
     },
     {
       "id": "F-007",
@@ -57,7 +69,8 @@
       "area": "all routes",
       "detail": "request bodies are cast with TypeScript `as` assertions only — no runtime schema validation (master prompt: runtime schemas required, TS assertions do not count).",
       "evidence": "all src/server/routes/*.ts",
-      "remediation": "add Fastify `schema` option (bundled ajv) per route for body/params/query"
+      "remediation": "add Fastify `schema` option (bundled ajv) per route for body/params/query",
+      "status": "open"
     },
     {
       "id": "F-008",
@@ -65,7 +78,8 @@
       "area": "app.ts hooks",
       "detail": "no Origin/Fetch-Metadata/CSRF enforcement on state-changing cookie-authenticated requests; no security headers.",
       "evidence": "src/server/app.ts",
-      "remediation": "add onRequest guard: POST/PUT/PATCH/DELETE require same-site (Sec-Fetch-Site) or allowed Origin; add baseline security headers"
+      "remediation": "add onRequest guard: POST/PUT/PATCH/DELETE require same-site (Sec-Fetch-Site) or allowed Origin; add baseline security headers",
+      "status": "open"
     },
     {
       "id": "F-009",
@@ -73,7 +87,8 @@
       "area": "auth/device/invite/redeem endpoints",
       "detail": "no application rate limiting on /auth/dev/login, /device/enroll, invitation accept, ticket redeem, customer search (PIN has DB lockout only).",
       "evidence": "src/server/routes/{auth,devices,tickets,customers}.ts",
-      "remediation": "in-memory token-bucket hook for sensitive endpoints; document multi-instance limitation"
+      "remediation": "in-memory token-bucket hook for sensitive endpoints; document multi-instance limitation",
+      "status": "open"
     },
     {
       "id": "F-010",
@@ -81,140 +96,161 @@
       "area": "sync.ts SSE loop",
       "detail": "reply.raw.write can throw after the client disconnects (write is outside try); also reopens a transaction per poll.",
       "evidence": "src/server/routes/sync.ts:160-180",
-      "remediation": "guard writes with closed flag + try/catch"
+      "remediation": "guard writes with closed flag + try/catch",
+      "status": "fixed",
+      "fix": "fixed: SSE honors Last-Event-ID and emits id: per changed event"
     },
     {
       "id": "F-011",
       "severity": "MEDIUM",
       "area": "roles",
       "detail": "no GET /stores/:id/roles — roles and their permissions cannot be listed, although PUT /roles/:id exists.",
-      "remediation": "add list endpoint + permissions"
+      "remediation": "add list endpoint + permissions",
+      "status": "open"
     },
     {
       "id": "F-012",
       "severity": "MEDIUM",
       "area": "memberships",
       "detail": "no endpoint to (re)assign roles to a membership — invitation assigns once; role changes impossible except by editing the role itself.",
-      "remediation": "add PUT /memberships/:id/roles"
+      "remediation": "add PUT /memberships/:id/roles",
+      "status": "open"
     },
     {
       "id": "F-013",
       "severity": "MEDIUM",
       "area": "notifications",
       "detail": "notification_jobs has no member-facing read/ack surface; IN_APP channel is write-only.",
-      "remediation": "add GET /me/notifications + ack endpoint (migration for read state)"
+      "remediation": "add GET /me/notifications + ack endpoint (migration for read state)",
+      "status": "open"
     },
     {
       "id": "F-014",
       "severity": "MEDIUM",
       "area": "finance",
       "detail": "no event-scoped orders list; only single-order GET.",
-      "remediation": "add GET /stores/:id/events/:eid/orders"
+      "remediation": "add GET /stores/:id/events/:eid/orders",
+      "status": "open"
     },
     {
       "id": "F-015",
       "severity": "MEDIUM",
       "area": "visits",
       "detail": "no additional-party/segment endpoint on an existing visit (追加人数の再判定) and no visit_members management for companions.",
-      "remediation": "add POST visits/:id/segments (re-judged) + members add/remove"
+      "remediation": "add POST visits/:id/segments (re-judged) + members add/remove",
+      "status": "open"
     },
     {
       "id": "F-016",
       "severity": "MEDIUM",
       "area": "passes",
       "detail": "no kiosk lookup for a pass by token/id for re-entry scanning; passes only surface inside visit summaries.",
-      "remediation": "add GET events/:id/passes?token= or list per visit"
+      "remediation": "add GET events/:id/passes?token= or list per visit",
+      "status": "open"
     },
     {
       "id": "F-017",
       "severity": "LOW",
       "area": "events",
       "detail": "no event update/cancel/duplicate endpoints (duplication is an explicit scope item).",
-      "remediation": "add PATCH event, POST /events/:id/duplicate, POST /events/:id/cancel"
+      "remediation": "add PATCH event, POST /events/:id/duplicate, POST /events/:id/cancel",
+      "status": "open"
     },
     {
       "id": "F-018",
       "severity": "MEDIUM",
       "area": "public booking",
       "detail": "no unauthenticated public booking surface (公開予約フォーム).",
-      "remediation": "booking_pages table + public GET/POST endpoints (rate limited) creating APPROVAL_PENDING bookings"
+      "remediation": "booking_pages table + public GET/POST endpoints (rate limited) creating APPROVAL_PENDING bookings",
+      "status": "open"
     },
     {
       "id": "F-019",
       "severity": "MEDIUM",
       "area": "private events / quotations",
       "detail": "no quotations model and no private-event detail flow (貸切/見積).",
-      "remediation": "migration: quotations table + endpoints; booking quotation link"
+      "remediation": "migration: quotations table + endpoints; booking quotation link",
+      "status": "open"
     },
     {
       "id": "F-020",
       "severity": "LOW",
       "area": "sync snapshot",
       "detail": "N+1 visitSummary per visit inside snapshot.",
-      "remediation": "batch load or document acceptable size cap"
+      "remediation": "batch load or document acceptable size cap",
+      "status": "open"
     },
     {
       "id": "F-021",
       "severity": "LOW",
       "area": "security headers",
       "detail": "no CSP/X-Content-Type-Options/Referrer-Policy headers on API.",
-      "remediation": "onSend hook baseline headers"
+      "remediation": "onSend hook baseline headers",
+      "status": "open"
     },
     {
       "id": "F-022",
       "severity": "MEDIUM",
       "area": "store onboarding",
       "detail": "no POST /platform/tenants/:id/stores or store-scoped create; onboarding item store_created cannot complete via API.",
-      "remediation": "add platform store create + tenant admin bootstrap"
+      "remediation": "add platform store create + tenant admin bootstrap",
+      "status": "open"
     },
     {
       "id": "F-023",
       "severity": "MEDIUM",
       "area": "auth alternatives",
       "detail": "no email-link login, no TOTP/recovery MFA, LINE OIDC is a 501 stub (B-02 gated).",
-      "remediation": "email-link token flow (dev outbox) + TOTP enroll/verify + recovery codes; OIDC adapter interface kept behind config"
+      "remediation": "email-link token flow (dev outbox) + TOTP enroll/verify + recovery codes; OIDC adapter interface kept behind config",
+      "status": "open"
     },
     {
       "id": "F-024",
       "severity": "LOW",
       "area": "platform operators",
       "detail": "no platform-operator management/list endpoint.",
-      "remediation": "GET/POST /platform/operators"
+      "remediation": "GET/POST /platform/operators",
+      "status": "open"
     },
     {
       "id": "F-025",
       "severity": "MEDIUM",
       "area": "rewards lifecycle",
       "detail": "reward_rules + settlement lines exist, but no statements/disputes/payout lifecycle (EP17 scope).",
-      "remediation": "migration + endpoints: reward_statements, reward_disputes, payout marks"
+      "remediation": "migration + endpoints: reward_statements, reward_disputes, payout marks",
+      "status": "open"
     },
     {
       "id": "F-026",
       "severity": "MEDIUM",
       "area": "OpenAPI parity",
       "detail": "spec/current/openapi.yaml is the v4 *designed* contract, not the implemented surface; no mechanical route/contract comparison.",
-      "remediation": "rewrite spec to implemented surface + parity test"
+      "remediation": "rewrite spec to implemented surface + parity test",
+      "status": "open"
     },
     {
       "id": "F-027",
       "severity": "MEDIUM",
       "area": "tickets UX",
       "detail": "no staff lookup of issued tickets by order for reprint/lost-token handling; token returned only at issuance (by design) so UI must capture it immediately.",
-      "remediation": "UI captures tokens at creation; add per-instance revoke/reissue endpoints"
+      "remediation": "UI captures tokens at creation; add per-instance revoke/reissue endpoints",
+      "status": "open"
     },
     {
       "id": "F-028",
       "severity": "LOW",
       "area": "hygiene",
       "detail": "events.ts ends with `void requireOperator` hack; finance.ts param destructure lists every param name as a workaround.",
-      "remediation": "type route params properly"
+      "remediation": "type route params properly",
+      "status": "open"
     },
     {
       "id": "F-029",
       "severity": "INFO",
       "area": "feature coverage vs scope",
       "detail": "unimplemented scope items: tenant import/migration jobs, branding, deletion-execution job, floor-map 2D editor UI, ticket QR UI, POS/inventory UI, CRM/campaigns, analytics/forecasting, multilingual/multicurrency beyond column, Stripe/Square/freee adapters, LINE OIDC, real WebPush/SES, platform console UI, role help/onboarding UI, PWA update flow, a11y pass.",
-      "remediation": "implement per phase; external-credential items stay BLOCKED with adapter seams"
+      "remediation": "implement per phase; external-credential items stay BLOCKED with adapter seams",
+      "status": "open"
     }
   ]
 }

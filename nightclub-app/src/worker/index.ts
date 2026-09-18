@@ -120,8 +120,11 @@ async function runExports(): Promise<number> {
       const g = { scope: 'system' as const, tenantId: j.tenant_id, storeId: j.store_id };
       const csv = await withCtx(g, async (c) => {
         const esc = (v: unknown) => {
-          const s = v == null ? '' : String(v);
-          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+          let s = v == null ? '' : String(v);
+          // Formula injection guard: cells starting with =, +, -, @ get a
+          // leading tab so spreadsheet apps never evaluate them.
+          if (/^[=+\-@]/.test(s)) s = `\t${s}`;
+          return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
         };
         const toCsv = (cols: string[], rows: Record<string, unknown>[]) =>
           [cols.join(','), ...rows.map((r) => cols.map((k) => esc(r[k])).join(','))].join('\n') + '\n';

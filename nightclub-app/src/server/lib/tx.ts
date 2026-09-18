@@ -74,23 +74,34 @@ export async function withReceipt<T>(
   },
 ): Promise<{ httpStatus: number; body: T; replayed: boolean }> {
   const reqHash = createHash('sha256').update(canonicalJson(args.body)).digest('hex');
-  const ins = await c.query(
-    `INSERT INTO nightclub.command_receipts
-       (tenant_id, store_id, actor_key, operation_key, operation_name,
-        request_hash, status, expires_at)
-     VALUES ($1,$2,$3,$4,$5,$6,'PROCESSING', CURRENT_TIMESTAMP + make_interval(secs => $7))
-     ON CONFLICT (tenant_id, store_id, actor_key, operation_name, operation_key)
-     DO NOTHING RETURNING id`,
-    [g.tenantId, g.storeId, args.actorKey, args.key, args.operation, reqHash,
-     args.receiptTtlSec]);
-  if (!ins.rows[0]) {
+  // Attempt the receipt insert twice: a conflicting row may be an EXPIRED
+  // receipt (TTL passed) — reclaim the key by deleting it and retry once.
+  // A live PROCESSING row means a concurrent/still-running command.
+  let receiptId: string | null = null;
+  for (let attempt = 0; attempt < 2 && !receiptId; attempt++) {
+    const ins = await c.query(
+      `INSERT INTO nightclub.command_receipts
+         (tenant_id, store_id, actor_key, operation_key, operation_name,
+          request_hash, status, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,'PROCESSING', CURRENT_TIMESTAMP + make_interval(secs => $7))
+       ON CONFLICT (tenant_id, store_id, actor_key, operation_name, operation_key)
+       DO NOTHING RETURNING id`,
+      [g.tenantId, g.storeId, args.actorKey, args.key, args.operation, reqHash,
+       args.receiptTtlSec]);
+    if (ins.rows[0]) { receiptId = ins.rows[0].id as string; break; }
     const ex = await c.query(
-      `SELECT request_hash, status, http_status, response_body
+      `SELECT id, request_hash, status, http_status, response_body, expires_at
          FROM nightclub.command_receipts
         WHERE tenant_id=$1 AND store_id=$2 AND actor_key=$3
           AND operation_name=$4 AND operation_key=$5`,
       [g.tenantId, g.storeId, args.actorKey, args.operation, args.key]);
     const r = ex.rows[0];
+    if (!r) continue; // conflict row vanished between insert and select
+    if (new Date(r.expires_at) <= new Date()) {
+      await c.query(
+        'DELETE FROM nightclub.command_receipts WHERE id=$1', [r.id]);
+      continue;
+    }
     if (r.request_hash !== reqHash) throw E.idempotencyConflict();
     if (r.status === 'PROCESSING') throw E.commandInProgress();
     return {
@@ -99,6 +110,7 @@ export async function withReceipt<T>(
       replayed: true,
     };
   }
+  if (!receiptId) throw E.unavailable();
   // Handler runs under a savepoint: business AppErrors roll back only the
   // business writes, while the receipt row (inserted before the savepoint)
   // survives and is committed with the stored rejection response.
@@ -111,7 +123,7 @@ export async function withReceipt<T>(
           SET status='SUCCEEDED', http_status=$2, response_body=$3,
               version=version+1, updated_at=CURRENT_TIMESTAMP
         WHERE id=$1`,
-      [ins.rows[0].id, res.httpStatus, JSON.stringify(res.body)]);
+      [receiptId, res.httpStatus, JSON.stringify(res.body)]);
     return { ...res, replayed: false };
   } catch (e) {
     if (e instanceof AppError) {
@@ -128,7 +140,7 @@ export async function withReceipt<T>(
             SET status='REJECTED', http_status=$2, response_body=$3,
                 version=version+1, updated_at=CURRENT_TIMESTAMP
           WHERE id=$1`,
-        [ins.rows[0].id, e.status, JSON.stringify(body)]);
+        [receiptId, e.status, JSON.stringify(body)]);
       return { httpStatus: e.status, body: body as T, replayed: false };
     }
     throw e;
@@ -167,24 +179,35 @@ export async function platformReceipt<T>(
   },
 ): Promise<{ httpStatus: number; body: T; replayed: boolean }> {
   const reqHash = createHash('sha256').update(canonicalJson(args.body)).digest('hex');
-  const ins = await c.query(
-    `INSERT INTO nightclub.platform_command_receipts
-       (actor_key, operation_key, operation_name, request_hash, status, expires_at)
-     VALUES ($1,$2,$3,$4,'PROCESSING', CURRENT_TIMESTAMP + make_interval(secs => $5))
-     ON CONFLICT (actor_key, operation_name, operation_key)
-     DO NOTHING RETURNING id`,
-    [args.actorKey, args.key, args.operation, reqHash, args.receiptTtlSec]);
-  if (!ins.rows[0]) {
+  // Same reclaim semantics as withReceipt: an expired receipt frees the key;
+  // a live PROCESSING row means the command is still running.
+  let receiptId: string | null = null;
+  for (let attempt = 0; attempt < 2 && !receiptId; attempt++) {
+    const ins = await c.query(
+      `INSERT INTO nightclub.platform_command_receipts
+         (actor_key, operation_key, operation_name, request_hash, status, expires_at)
+       VALUES ($1,$2,$3,$4,'PROCESSING', CURRENT_TIMESTAMP + make_interval(secs => $5))
+       ON CONFLICT (actor_key, operation_name, operation_key)
+       DO NOTHING RETURNING id`,
+      [args.actorKey, args.key, args.operation, reqHash, args.receiptTtlSec]);
+    if (ins.rows[0]) { receiptId = ins.rows[0].id as string; break; }
     const ex = await c.query(
-      `SELECT request_hash, status, http_status, response_body
+      `SELECT id, request_hash, status, http_status, response_body, expires_at
          FROM nightclub.platform_command_receipts
         WHERE actor_key=$1 AND operation_name=$2 AND operation_key=$3`,
       [args.actorKey, args.operation, args.key]);
     const r = ex.rows[0];
+    if (!r) continue;
+    if (new Date(r.expires_at) <= new Date()) {
+      await c.query(
+        'DELETE FROM nightclub.platform_command_receipts WHERE id=$1', [r.id]);
+      continue;
+    }
     if (r.request_hash !== reqHash) throw E.idempotencyConflict();
     if (r.status === 'PROCESSING') throw E.commandInProgress();
     return { httpStatus: r.http_status ?? 200, body: r.response_body as T, replayed: true };
   }
+  if (!receiptId) throw E.unavailable();
   await c.query('SAVEPOINT nc_command');
   try {
     const res = await args.run();
@@ -194,7 +217,7 @@ export async function platformReceipt<T>(
           SET status='SUCCEEDED', http_status=$2, response_body=$3,
               version=version+1, updated_at=CURRENT_TIMESTAMP
         WHERE id=$1`,
-      [ins.rows[0].id, res.httpStatus, JSON.stringify(res.body)]);
+      [receiptId, res.httpStatus, JSON.stringify(res.body)]);
     return { ...res, replayed: false };
   } catch (e) {
     if (e instanceof AppError) {
@@ -211,7 +234,7 @@ export async function platformReceipt<T>(
             SET status='REJECTED', http_status=$2, response_body=$3,
                 version=version+1, updated_at=CURRENT_TIMESTAMP
           WHERE id=$1`,
-        [ins.rows[0].id, e.status, JSON.stringify(body)]);
+        [receiptId, e.status, JSON.stringify(body)]);
       return { httpStatus: e.status, body: body as T, replayed: false };
     }
     throw e;

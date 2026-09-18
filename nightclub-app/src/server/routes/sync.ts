@@ -146,7 +146,12 @@ export default async function syncRoutes(app: FastifyInstance) {
   app.get('/stores/:storeId/events/:eventId/stream', async (req, reply) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await syncCaller(req, storeId, eventId);
-    let cursor = BigInt(String((req.query as { cursor?: string }).cursor ?? '0'));
+    // Resume cursor: Last-Event-ID (SSE reconnect) takes precedence over the
+    // explicit ?cursor= query param.
+    const lastId = req.headers['last-event-id'];
+    const q = (req.query as { cursor?: string }).cursor;
+    let cursor = BigInt(
+      typeof lastId === 'string' && /^\d+$/.test(lastId) ? lastId : (q ?? '0'));
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
@@ -168,7 +173,8 @@ export default async function syncRoutes(app: FastifyInstance) {
         });
         if (head > cursor) {
           cursor = head;
-          reply.raw.write(`event: changed\ndata: {"cursor":"${cursor}"}\n\n`);
+          // id: lets the browser supply Last-Event-ID on reconnect.
+          reply.raw.write(`id: ${cursor}\nevent: changed\ndata: {"cursor":"${cursor}"}\n\n`);
         } else {
           reply.raw.write(`event: ping\ndata: {}\n\n`);
         }

@@ -1,0 +1,9 @@
+ [32m✓[39m tests/api/r1.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 634[2mms[22m[39m
+ [32m✓[39m tests/api/vip.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 278[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m42 passed[39m[22m[90m (42)[39m
+[2m   Start at [22m 05:16:19
+[2m   Duration [22m 4.06s[2m (tests 79%, transform 11%, import 10%)[22m
+
+d90d4aa

@@ -325,7 +325,7 @@ export default async function opsRoutes(app: FastifyInstance) {
       const r = await c.query(
         `UPDATE nightclub.settlements SET status='FINALIZED',
             finalized_by=$5, finalized_at=CURRENT_TIMESTAMP,
-            updated_at=CURRENT_TIMESTAMP
+            version=version+1, updated_at=CURRENT_TIMESTAMP
           WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
             AND version=$6 AND status='DRAFT' RETURNING version`,
         [member.tenantId, storeId, eventId, settlementId,

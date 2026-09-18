@@ -334,7 +334,7 @@ export default async function financeRoutes(app: FastifyInstance) {
            FROM nightclub.visits v
            LEFT JOIN nightclub.admission_events ae
              ON ae.tenant_id=v.tenant_id AND ae.store_id=v.store_id
-            AND ae.event_id=v.event_id AND ae.visit_id=v.visit_id
+            AND ae.event_id=v.event_id AND ae.visit_id=v.id
           WHERE v.tenant_id=$1 AND v.store_id=$2 AND v.event_id=$3
             AND v.referrer_membership_id=$4`,
         [c0.g.tenantId, storeId, eventId, c0.member.membershipId]);

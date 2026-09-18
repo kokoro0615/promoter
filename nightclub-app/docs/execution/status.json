@@ -13,7 +13,7 @@
   },
   "current_release": "R1 verified; R2/R3 internal foundations verified",
   "current_epic": "v5: Phase 3 foundation hardening in progress",
-  "phase": "R1 verified + R2(EP24/25)/R3(EP26/27) 内製範囲実装・検証済み",
+  "phase": "v5 Phase 3a完了: F-001〜F-010実バグ7件修正＋回帰試験（api 42 tests全パス）。Phase 3bセキュリティ基盤へ移行",
   "completed_features": [
     "EP01-04: tenants/stores/users/memberships/roles/permissions, dev-issuer login, invitations, memberships suspend, operator PIN (argon2id), device enrollment/pairing, operator sessions with epoch-based replacement + X-Operator-Context",
     "EP05-08: events + policy versions (publish gate), customers + name/kana search (same-name preserved), visits + admission segments + price-rule adjudication",
@@ -56,7 +56,9 @@
     "r1_verify": "evidence/r1_verify_20260917.txt  (unit 9 / db 7 / api 16 all pass)",
     "r1_e2e": "evidence/r1_e2e_20260917.txt  (playwright 3/3 pass)",
     "openapi_lint": "spec/current/openapi.yaml — redocly valid (2 unused-component warnings, 原本由来)",
-    "r2r3_verify": "evidence/r2r3_verify_20260917.txt  (total 50 tests: unit 9 / db 7 / api 34 / e2e 3 / build+openapi ok / worker export verified)"
+    "r2r3_verify": "evidence/r2r3_verify_20260917.txt  (total 50 tests: unit 9 / db 7 / api 34 / e2e 3 / build+openapi ok / worker export verified)",
+    "phase3a_verify": "evidence/phase3a_verify_20260919.txt  (lint ok / unit 9 / db 7 / api 42 incl. vip regression 8)",
+    "migration_0004": "db/migrations/0004_v5_completion.sql applied after reset (v5 schema: nullable bookings.visit_id/sales_orders.visit_id, notification_jobs.payload, quotations, booking_pages, email_login_tokens, mfa, crm tags, campaigns, forecast_runs, stocktakes, nc_payments_system_lookup policy)"
   },
   "environment": {
     "node": "v24.19.0",
