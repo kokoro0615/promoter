@@ -1,0 +1,125 @@
+erDiagram
+    %% v4 R1 physical reference. Composite tenant/store/event FKs are defined in model.json.
+    sales_attributions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid sales_line_id FK
+        uuid referrer_membership_id FK
+        integer version
+    }
+    reward_rules {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        uuid referrer_membership_id FK "nullable"
+    }
+    settlements {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        integer version
+        text status
+        uuid finalized_by FK "nullable"
+    }
+    settlement_lines {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid settlement_id FK
+        uuid referrer_membership_id FK
+        uuid reward_rule_id FK
+        uuid admission_event_id FK "nullable"
+        uuid sales_line_id FK "nullable"
+        bigint amount_minor
+    }
+    reward_adjustments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid settlement_line_id FK
+        bigint amount_minor
+        uuid created_by FK
+    }
+    reward_disputes {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid settlement_line_id FK
+        uuid raised_by FK
+        text status
+        integer version
+    }
+    settlement_payments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid settlement_id FK
+        uuid referrer_membership_id FK
+        bigint amount_minor
+        uuid recorded_by FK
+    }
+    cash_sessions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid operator_session_id FK
+        integer version
+    }
+    memberships {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid user_id FK
+        text status
+        integer version
+    }
+    admission_events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid segment_id FK
+        uuid pass_id FK "nullable"
+        uuid operator_session_id FK
+        uuid actor_membership_id FK
+        uuid customer_check_id FK "nullable"
+        uuid corrects_id FK "nullable"
+    }
+    sales_lines {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid order_id FK
+        uuid segment_id FK "nullable"
+        uuid adjusts_line_id FK "nullable"
+    }
+    sales_lines ||..o{ sales_attributions : sales_line_id
+    memberships ||..o{ sales_attributions : referrer_membership_id
+    memberships |o..o{ reward_rules : referrer_membership_id
+    memberships |o..o{ settlements : finalized_by
+    settlements ||..o{ settlement_lines : settlement_id
+    memberships ||..o{ settlement_lines : referrer_membership_id
+    reward_rules ||..o{ settlement_lines : reward_rule_id
+    admission_events |o..o{ settlement_lines : admission_event_id
+    sales_lines |o..o{ settlement_lines : sales_line_id
+    settlement_lines ||..o{ reward_adjustments : settlement_line_id
+    memberships ||..o{ reward_adjustments : created_by
+    settlement_lines ||..o{ reward_disputes : settlement_line_id
+    memberships ||..o{ reward_disputes : raised_by
+    settlements ||..o{ settlement_payments : settlement_id
+    memberships ||..o{ settlement_payments : referrer_membership_id
+    memberships ||..o{ settlement_payments : recorded_by
+    memberships ||..o{ admission_events : actor_membership_id
+    admission_events |o..o{ admission_events : corrects_id
+    sales_lines |o..o{ sales_lines : adjusts_line_id

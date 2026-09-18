@@ -1,0 +1,20 @@
+stateDiagram-v2
+    [*] --> HOLD: 物理席を仮押さえ
+    HOLD --> PAYMENT_PENDING: 決済開始
+    HOLD --> APPROVAL_PENDING: 店舗の予約承認を待つ
+    PAYMENT_PENDING --> CONFIRMED: 入金・在庫・予約承認条件を全て満たす
+    PAYMENT_PENDING --> APPROVAL_PENDING: 入金済みで予約承認のみ未了
+    APPROVAL_PENDING --> CONFIRMED: 予約承認・入金・在庫を全て確認
+    HOLD --> CANCELED: 押さえ失効または取消
+    PAYMENT_PENDING --> CANCELED: 期限切れまたは取消
+    APPROVAL_PENDING --> CANCELED: 却下・期限切れ・取消
+    CANCELED --> PAYMENT_EXCEPTION: 失効後の遅延決済成功
+    PAYMENT_EXCEPTION --> CONFIRMED: 再引当と全条件が成立
+    PAYMENT_EXCEPTION --> CANCELED: 返金等の対応完了
+    CONFIRMED --> CANCELED: ポリシーに従う取消
+    CONFIRMED --> NO_SHOW: 営業終了後の未入場照合
+    note right of CONFIRMED
+        実入場と利用会計は別台帳
+        支払状態はpaymentsで追跡
+        VIP承認はフリー承認とは別
+    end note

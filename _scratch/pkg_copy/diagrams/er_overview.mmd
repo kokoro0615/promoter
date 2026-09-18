@@ -1,0 +1,20 @@
+erDiagram
+    tenants ||..o{ stores : contains
+    app_users ||..o{ memberships : joins
+    stores ||..o{ memberships : employs
+    stores ||..o{ customers : manages
+    stores ||..o{ devices : enrolls
+    devices ||..o{ operator_sessions : authenticates_operator
+    memberships ||..o{ operator_sessions : works_as
+    stores ||..o{ events : operates
+    events ||..o{ visits : receives
+    customers |o..o{ visits : identified_customer
+    visits ||..o{ admission_segments : conditions
+    admission_segments ||..o{ approval_requests : requests
+    approval_requests ||..o| approval_decisions : one_decision
+    admission_segments ||..o{ admission_events : records_entry
+    visits ||..o{ bookings : reserves_vip
+    visits ||..o{ sales_orders : billed
+    sales_orders ||..o{ sales_lines : contains
+    sales_orders ||..o{ payments : receives
+    sales_lines |o..o{ settlement_lines : supports_reward

@@ -1,0 +1,869 @@
+erDiagram
+    %% v4 R1 physical reference. Composite tenant/store/event FKs are defined in model.json.
+    tenants {
+        uuid id PK
+        text status
+        integer version
+    }
+    app_users {
+        uuid id PK
+        text status
+        integer version
+    }
+    external_identities {
+        uuid id PK
+        uuid user_id FK
+        integer version
+    }
+    auth_sessions {
+        uuid id PK
+        uuid user_id FK
+        integer version
+    }
+    stores {
+        uuid id PK
+        uuid tenant_id FK
+        text status
+        integer version
+    }
+    memberships {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid user_id FK
+        text status
+        integer version
+    }
+    roles {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+    }
+    role_permissions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid role_id FK
+        integer version
+    }
+    membership_roles {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid membership_id FK
+        uuid role_id FK
+        uuid granted_by FK
+        integer version
+    }
+    invitation_tokens {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid role_id FK
+        uuid issued_by FK
+        uuid used_by FK "nullable"
+        integer version
+    }
+    events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    event_assignments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid membership_id FK
+        integer version
+    }
+    devices {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        uuid enrolled_by FK
+        bigint operator_epoch
+        integer version
+    }
+    device_enrollments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid device_id FK
+        uuid issued_by FK
+        integer version
+    }
+    device_sessions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid device_id FK
+        integer version
+    }
+    operator_credentials {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid membership_id FK
+        integer version
+    }
+    operator_sessions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid device_id FK
+        uuid device_session_id FK
+        uuid membership_id FK
+        bigint operator_epoch
+        integer version
+    }
+    customers {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text name_key
+        integer version
+    }
+    customer_aliases {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid customer_id FK
+        integer version
+    }
+    operating_templates {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        uuid created_by FK
+    }
+    policy_versions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        integer version
+        text status
+        uuid published_by FK "nullable"
+    }
+    price_rules {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid policy_version_id FK
+        bigint amount_minor
+        integer version
+    }
+    permits {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        uuid customer_id FK "nullable"
+        uuid actor_membership_id FK "nullable"
+        uuid granted_by FK
+        text status
+        uuid supersedes_id FK "nullable"
+    }
+    referrer_profiles {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid membership_id FK
+        integer version
+    }
+    invitation_links {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid referrer_membership_id FK
+        text status
+        integer version
+    }
+    coupons {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        uuid owner_membership_id FK "nullable"
+        text status
+    }
+    visits {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid customer_id FK "nullable"
+        uuid referrer_membership_id FK "nullable"
+        uuid created_by FK "nullable"
+        text name_key
+        integer planned_count
+        text status
+        integer version
+    }
+    visit_members {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid customer_id FK "nullable"
+        integer version
+    }
+    customer_checks {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid customer_id FK
+        uuid checked_by FK
+        uuid operator_session_id FK "nullable"
+    }
+    admission_segments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid price_rule_id FK
+        uuid permit_id FK "nullable"
+        uuid required_customer_id FK "nullable"
+        text status
+        text authorization_method "nullable"
+        integer version
+    }
+    approval_requests {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid segment_id FK
+        uuid requested_by FK
+        text status
+        integer version
+    }
+    approval_decisions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid request_id FK
+        uuid decided_by FK
+        uuid operator_session_id FK "nullable"
+    }
+    quota_buckets {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        integer version
+    }
+    quota_allocations {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid bucket_id FK
+        uuid segment_id FK
+        integer version
+    }
+    entry_passes {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid member_id FK "nullable"
+        integer version
+    }
+    admission_events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid segment_id FK
+        uuid pass_id FK "nullable"
+        uuid operator_session_id FK
+        uuid actor_membership_id FK
+        uuid customer_check_id FK "nullable"
+        uuid corrects_id FK "nullable"
+    }
+    provisional_entries {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid device_id FK
+        uuid actor_membership_id FK
+        uuid visit_id FK "nullable"
+        text status
+        uuid reconciled_entry_id FK "nullable"
+        integer version
+    }
+    floor_maps {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        text status
+    }
+    venue_tables {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    bookings {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid customer_id FK "nullable"
+        text status
+        integer version
+    }
+    booking_decisions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid booking_id FK
+        uuid actor_membership_id FK
+    }
+    table_allocations {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid booking_id FK
+        uuid table_id FK
+        text status
+        integer version
+    }
+    sales_orders {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid booking_id FK "nullable"
+        text status
+        integer version
+    }
+    sales_lines {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid order_id FK
+        uuid segment_id FK "nullable"
+        uuid adjusts_line_id FK "nullable"
+    }
+    payments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid recorded_by FK "nullable"
+        uuid operator_session_id FK "nullable"
+        uuid order_id FK
+        bigint amount_minor
+        text status
+        integer version
+    }
+    payment_allocations {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid sales_line_id FK "nullable"
+        uuid payment_id FK
+        uuid order_id FK
+        bigint amount_minor
+        uuid reverses_id FK "nullable"
+    }
+    refunds {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid payment_id FK
+        bigint amount_minor
+        text status
+        uuid requested_by FK
+        integer version
+    }
+    payment_disputes {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid payment_id FK
+        bigint amount_minor
+        text status
+        integer version
+    }
+    coupon_redemptions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid coupon_id FK
+        uuid visit_id FK
+        uuid sales_line_id FK "nullable"
+        text status
+        integer version
+    }
+    sales_attributions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid sales_line_id FK
+        uuid referrer_membership_id FK
+        integer version
+    }
+    reward_rules {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        uuid referrer_membership_id FK "nullable"
+    }
+    settlements {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        integer version
+        text status
+        uuid finalized_by FK "nullable"
+    }
+    settlement_lines {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid settlement_id FK
+        uuid referrer_membership_id FK
+        uuid reward_rule_id FK
+        uuid admission_event_id FK "nullable"
+        uuid sales_line_id FK "nullable"
+        bigint amount_minor
+    }
+    reward_adjustments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid settlement_line_id FK
+        bigint amount_minor
+        uuid created_by FK
+    }
+    reward_disputes {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid settlement_line_id FK
+        uuid raised_by FK
+        text status
+        integer version
+    }
+    settlement_payments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid settlement_id FK
+        uuid referrer_membership_id FK
+        bigint amount_minor
+        uuid recorded_by FK
+    }
+    cash_sessions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid operator_session_id FK
+        integer version
+    }
+    command_receipts {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    event_stream_heads {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        integer version
+    }
+    outbox_events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        bigint stream_seq
+        integer version
+    }
+    sync_acks {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid device_id FK
+        uuid operator_session_id FK
+        integer version
+    }
+    notification_templates {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        text status
+    }
+    notification_jobs {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid outbox_event_id FK "nullable"
+        uuid recipient_membership_id FK "nullable"
+        uuid recipient_customer_id FK "nullable"
+        text status
+        integer version
+    }
+    integration_events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    audit_logs {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid actor_membership_id FK "nullable"
+        uuid device_id FK "nullable"
+        uuid operator_session_id FK "nullable"
+    }
+    export_jobs {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid requested_by FK
+        text status
+        integer version
+    }
+    import_jobs {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid requested_by FK
+        text status
+        integer version
+    }
+    app_users ||..o{ external_identities : user_id
+    app_users ||..o{ auth_sessions : user_id
+    tenants ||..o{ stores : tenant_id
+    tenants ||..o{ memberships : tenant_id
+    stores ||..o{ memberships : store_id
+    app_users ||..o{ memberships : user_id
+    tenants ||..o{ roles : tenant_id
+    stores ||..o{ roles : store_id
+    tenants ||..o{ role_permissions : tenant_id
+    stores ||..o{ role_permissions : store_id
+    roles ||..o{ role_permissions : role_id
+    tenants ||..o{ membership_roles : tenant_id
+    stores ||..o{ membership_roles : store_id
+    memberships ||..o{ membership_roles : membership_id
+    roles ||..o{ membership_roles : role_id
+    memberships ||..o{ membership_roles : granted_by
+    tenants ||..o{ invitation_tokens : tenant_id
+    stores ||..o{ invitation_tokens : store_id
+    roles ||..o{ invitation_tokens : role_id
+    memberships ||..o{ invitation_tokens : issued_by
+    app_users |o..o{ invitation_tokens : used_by
+    tenants ||..o{ events : tenant_id
+    stores ||..o{ events : store_id
+    tenants ||..o{ event_assignments : tenant_id
+    stores ||..o{ event_assignments : store_id
+    events ||..o{ event_assignments : event_id
+    memberships ||..o{ event_assignments : membership_id
+    tenants ||..o{ devices : tenant_id
+    stores ||..o{ devices : store_id
+    memberships ||..o{ devices : enrolled_by
+    tenants ||..o{ device_enrollments : tenant_id
+    stores ||..o{ device_enrollments : store_id
+    devices ||..o{ device_enrollments : device_id
+    memberships ||..o{ device_enrollments : issued_by
+    tenants ||..o{ device_sessions : tenant_id
+    stores ||..o{ device_sessions : store_id
+    devices ||..o{ device_sessions : device_id
+    tenants ||..o{ operator_credentials : tenant_id
+    stores ||..o{ operator_credentials : store_id
+    memberships ||..o{ operator_credentials : membership_id
+    tenants ||..o{ operator_sessions : tenant_id
+    stores ||..o{ operator_sessions : store_id
+    events ||..o{ operator_sessions : event_id
+    devices ||..o{ operator_sessions : device_id
+    device_sessions ||..o{ operator_sessions : device_session_id
+    memberships ||..o{ operator_sessions : membership_id
+    device_sessions |o..o{ operator_sessions : same_device_session
+    tenants ||..o{ customers : tenant_id
+    stores ||..o{ customers : store_id
+    tenants ||..o{ customer_aliases : tenant_id
+    stores ||..o{ customer_aliases : store_id
+    customers ||..o{ customer_aliases : customer_id
+    tenants ||..o{ operating_templates : tenant_id
+    stores ||..o{ operating_templates : store_id
+    memberships ||..o{ operating_templates : created_by
+    tenants ||..o{ policy_versions : tenant_id
+    stores ||..o{ policy_versions : store_id
+    events ||..o{ policy_versions : event_id
+    memberships |o..o{ policy_versions : published_by
+    tenants ||..o{ price_rules : tenant_id
+    stores ||..o{ price_rules : store_id
+    events ||..o{ price_rules : event_id
+    policy_versions ||..o{ price_rules : policy_version_id
+    tenants ||..o{ permits : tenant_id
+    stores ||..o{ permits : store_id
+    customers |o..o{ permits : customer_id
+    memberships |o..o{ permits : actor_membership_id
+    memberships ||..o{ permits : granted_by
+    permits |o..o{ permits : supersedes_id
+    tenants ||..o{ referrer_profiles : tenant_id
+    stores ||..o{ referrer_profiles : store_id
+    memberships ||..o{ referrer_profiles : membership_id
+    tenants ||..o{ invitation_links : tenant_id
+    stores ||..o{ invitation_links : store_id
+    events ||..o{ invitation_links : event_id
+    memberships ||..o{ invitation_links : referrer_membership_id
+    tenants ||..o{ coupons : tenant_id
+    stores ||..o{ coupons : store_id
+    memberships |o..o{ coupons : owner_membership_id
+    tenants ||..o{ visits : tenant_id
+    stores ||..o{ visits : store_id
+    events ||..o{ visits : event_id
+    customers |o..o{ visits : customer_id
+    memberships |o..o{ visits : referrer_membership_id
+    memberships |o..o{ visits : created_by
+    tenants ||..o{ visit_members : tenant_id
+    stores ||..o{ visit_members : store_id
+    events ||..o{ visit_members : event_id
+    visits ||..o{ visit_members : visit_id
+    customers |o..o{ visit_members : customer_id
+    tenants ||..o{ customer_checks : tenant_id
+    stores ||..o{ customer_checks : store_id
+    events ||..o{ customer_checks : event_id
+    visits ||..o{ customer_checks : visit_id
+    customers ||..o{ customer_checks : customer_id
+    memberships ||..o{ customer_checks : checked_by
+    operator_sessions |o..o{ customer_checks : operator_session_id
+    tenants ||..o{ admission_segments : tenant_id
+    stores ||..o{ admission_segments : store_id
+    events ||..o{ admission_segments : event_id
+    visits ||..o{ admission_segments : visit_id
+    price_rules ||..o{ admission_segments : price_rule_id
+    permits |o..o{ admission_segments : permit_id
+    customers |o..o{ admission_segments : required_customer_id
+    tenants ||..o{ approval_requests : tenant_id
+    stores ||..o{ approval_requests : store_id
+    events ||..o{ approval_requests : event_id
+    admission_segments ||..o{ approval_requests : segment_id
+    memberships ||..o{ approval_requests : requested_by
+    tenants ||..o{ approval_decisions : tenant_id
+    stores ||..o{ approval_decisions : store_id
+    events ||..o{ approval_decisions : event_id
+    approval_requests ||..o{ approval_decisions : request_id
+    memberships ||..o{ approval_decisions : decided_by
+    operator_sessions |o..o{ approval_decisions : operator_session_id
+    tenants ||..o{ quota_buckets : tenant_id
+    stores ||..o{ quota_buckets : store_id
+    events ||..o{ quota_buckets : event_id
+    tenants ||..o{ quota_allocations : tenant_id
+    stores ||..o{ quota_allocations : store_id
+    events ||..o{ quota_allocations : event_id
+    quota_buckets ||..o{ quota_allocations : bucket_id
+    admission_segments ||..o{ quota_allocations : segment_id
+    tenants ||..o{ entry_passes : tenant_id
+    stores ||..o{ entry_passes : store_id
+    events ||..o{ entry_passes : event_id
+    visits ||..o{ entry_passes : visit_id
+    visit_members |o..o{ entry_passes : member_id
+    tenants ||..o{ admission_events : tenant_id
+    stores ||..o{ admission_events : store_id
+    events ||..o{ admission_events : event_id
+    visits ||..o{ admission_events : visit_id
+    admission_segments ||..o{ admission_events : segment_id
+    entry_passes |o..o{ admission_events : pass_id
+    operator_sessions ||..o{ admission_events : operator_session_id
+    memberships ||..o{ admission_events : actor_membership_id
+    customer_checks |o..o{ admission_events : customer_check_id
+    admission_events |o..o{ admission_events : corrects_id
+    admission_segments |o..o{ admission_events : same_visit_segment_id
+    entry_passes |o..o{ admission_events : same_visit_pass_id
+    customer_checks |o..o{ admission_events : same_visit_customer_check_id
+    tenants ||..o{ provisional_entries : tenant_id
+    stores ||..o{ provisional_entries : store_id
+    events ||..o{ provisional_entries : event_id
+    devices ||..o{ provisional_entries : device_id
+    memberships ||..o{ provisional_entries : actor_membership_id
+    visits |o..o{ provisional_entries : visit_id
+    admission_events |o..o{ provisional_entries : reconciled_entry_id
+    tenants ||..o{ floor_maps : tenant_id
+    stores ||..o{ floor_maps : store_id
+    tenants ||..o{ venue_tables : tenant_id
+    stores ||..o{ venue_tables : store_id
+    tenants ||..o{ bookings : tenant_id
+    stores ||..o{ bookings : store_id
+    events ||..o{ bookings : event_id
+    visits ||..o{ bookings : visit_id
+    customers |o..o{ bookings : customer_id
+    tenants ||..o{ booking_decisions : tenant_id
+    stores ||..o{ booking_decisions : store_id
+    events ||..o{ booking_decisions : event_id
+    bookings ||..o{ booking_decisions : booking_id
+    memberships ||..o{ booking_decisions : actor_membership_id
+    tenants ||..o{ table_allocations : tenant_id
+    stores ||..o{ table_allocations : store_id
+    events ||..o{ table_allocations : event_id
+    bookings ||..o{ table_allocations : booking_id
+    venue_tables ||..o{ table_allocations : table_id
+    tenants ||..o{ sales_orders : tenant_id
+    stores ||..o{ sales_orders : store_id
+    events ||..o{ sales_orders : event_id
+    visits ||..o{ sales_orders : visit_id
+    bookings |o..o{ sales_orders : booking_id
+    bookings |o..o{ sales_orders : same_visit_booking_id
+    tenants ||..o{ sales_lines : tenant_id
+    stores ||..o{ sales_lines : store_id
+    events ||..o{ sales_lines : event_id
+    sales_orders ||..o{ sales_lines : order_id
+    admission_segments |o..o{ sales_lines : segment_id
+    sales_lines |o..o{ sales_lines : adjusts_line_id
+    sales_orders |o..o{ sales_lines : same_order_currency
+    tenants ||..o{ payments : tenant_id
+    stores ||..o{ payments : store_id
+    events ||..o{ payments : event_id
+    memberships |o..o{ payments : recorded_by
+    operator_sessions |o..o{ payments : operator_session_id
+    sales_orders ||..o{ payments : order_id
+    sales_orders |o..o{ payments : same_order_currency
+    tenants ||..o{ payment_allocations : tenant_id
+    stores ||..o{ payment_allocations : store_id
+    events ||..o{ payment_allocations : event_id
+    sales_lines |o..o{ payment_allocations : sales_line_id
+    payments ||..o{ payment_allocations : payment_id
+    sales_orders ||..o{ payment_allocations : order_id
+    payment_allocations |o..o{ payment_allocations : reverses_id
+    sales_orders |o..o{ payment_allocations : same_order_currency
+    payments |o..o{ payment_allocations : same_payment_currency
+    sales_lines |o..o{ payment_allocations : same_order_line_currency
+    tenants ||..o{ refunds : tenant_id
+    stores ||..o{ refunds : store_id
+    events ||..o{ refunds : event_id
+    payments ||..o{ refunds : payment_id
+    memberships ||..o{ refunds : requested_by
+    payments |o..o{ refunds : same_payment_currency
+    tenants ||..o{ payment_disputes : tenant_id
+    stores ||..o{ payment_disputes : store_id
+    events ||..o{ payment_disputes : event_id
+    payments ||..o{ payment_disputes : payment_id
+    tenants ||..o{ coupon_redemptions : tenant_id
+    stores ||..o{ coupon_redemptions : store_id
+    events ||..o{ coupon_redemptions : event_id
+    coupons ||..o{ coupon_redemptions : coupon_id
+    visits ||..o{ coupon_redemptions : visit_id
+    sales_lines |o..o{ coupon_redemptions : sales_line_id
+    tenants ||..o{ sales_attributions : tenant_id
+    stores ||..o{ sales_attributions : store_id
+    events ||..o{ sales_attributions : event_id
+    sales_lines ||..o{ sales_attributions : sales_line_id
+    memberships ||..o{ sales_attributions : referrer_membership_id
+    tenants ||..o{ reward_rules : tenant_id
+    stores ||..o{ reward_rules : store_id
+    memberships |o..o{ reward_rules : referrer_membership_id
+    tenants ||..o{ settlements : tenant_id
+    stores ||..o{ settlements : store_id
+    events ||..o{ settlements : event_id
+    memberships |o..o{ settlements : finalized_by
+    tenants ||..o{ settlement_lines : tenant_id
+    stores ||..o{ settlement_lines : store_id
+    events ||..o{ settlement_lines : event_id
+    settlements ||..o{ settlement_lines : settlement_id
+    memberships ||..o{ settlement_lines : referrer_membership_id
+    reward_rules ||..o{ settlement_lines : reward_rule_id
+    admission_events |o..o{ settlement_lines : admission_event_id
+    sales_lines |o..o{ settlement_lines : sales_line_id
+    tenants ||..o{ reward_adjustments : tenant_id
+    stores ||..o{ reward_adjustments : store_id
+    events ||..o{ reward_adjustments : event_id
+    settlement_lines ||..o{ reward_adjustments : settlement_line_id
+    memberships ||..o{ reward_adjustments : created_by
+    tenants ||..o{ reward_disputes : tenant_id
+    stores ||..o{ reward_disputes : store_id
+    events ||..o{ reward_disputes : event_id
+    settlement_lines ||..o{ reward_disputes : settlement_line_id
+    memberships ||..o{ reward_disputes : raised_by
+    tenants ||..o{ settlement_payments : tenant_id
+    stores ||..o{ settlement_payments : store_id
+    events ||..o{ settlement_payments : event_id
+    settlements ||..o{ settlement_payments : settlement_id
+    memberships ||..o{ settlement_payments : referrer_membership_id
+    memberships ||..o{ settlement_payments : recorded_by
+    tenants ||..o{ cash_sessions : tenant_id
+    stores ||..o{ cash_sessions : store_id
+    events ||..o{ cash_sessions : event_id
+    operator_sessions ||..o{ cash_sessions : operator_session_id
+    tenants ||..o{ command_receipts : tenant_id
+    stores ||..o{ command_receipts : store_id
+    tenants ||..o{ event_stream_heads : tenant_id
+    stores ||..o{ event_stream_heads : store_id
+    events ||..o{ event_stream_heads : event_id
+    tenants ||..o{ outbox_events : tenant_id
+    stores ||..o{ outbox_events : store_id
+    events ||..o{ outbox_events : event_id
+    tenants ||..o{ sync_acks : tenant_id
+    stores ||..o{ sync_acks : store_id
+    events ||..o{ sync_acks : event_id
+    devices ||..o{ sync_acks : device_id
+    operator_sessions ||..o{ sync_acks : operator_session_id
+    tenants ||..o{ notification_templates : tenant_id
+    stores ||..o{ notification_templates : store_id
+    tenants ||..o{ notification_jobs : tenant_id
+    stores ||..o{ notification_jobs : store_id
+    events ||..o{ notification_jobs : event_id
+    outbox_events |o..o{ notification_jobs : outbox_event_id
+    memberships |o..o{ notification_jobs : recipient_membership_id
+    customers |o..o{ notification_jobs : recipient_customer_id
+    tenants ||..o{ integration_events : tenant_id
+    stores ||..o{ integration_events : store_id
+    tenants ||..o{ audit_logs : tenant_id
+    stores ||..o{ audit_logs : store_id
+    memberships |o..o{ audit_logs : actor_membership_id
+    devices |o..o{ audit_logs : device_id
+    operator_sessions |o..o{ audit_logs : operator_session_id
+    tenants ||..o{ export_jobs : tenant_id
+    stores ||..o{ export_jobs : store_id
+    memberships ||..o{ export_jobs : requested_by
+    tenants ||..o{ import_jobs : tenant_id
+    stores ||..o{ import_jobs : store_id
+    memberships ||..o{ import_jobs : requested_by

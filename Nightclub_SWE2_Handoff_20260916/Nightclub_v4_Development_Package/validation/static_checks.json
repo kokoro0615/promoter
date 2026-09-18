@@ -1,0 +1,52 @@
+{
+  "checked_at_utc": "2026-09-15T15:05:52.107640+00:00",
+  "scope": "STATIC_DOCUMENT_AND_REFERENCE_CHECKS_ONLY",
+  "results": [
+    {
+      "check": "JSON_YAML_PARSE",
+      "status": "PASS",
+      "detail": "14 JSON/YAML parsed"
+    },
+    {
+      "check": "JSON_SCHEMA_EXAMPLES",
+      "status": "PASS",
+      "detail": "4 schemas and example instances valid"
+    },
+    {
+      "check": "OPENAPI_INTERNAL_CONTRACT",
+      "status": "PASS",
+      "detail": "72 paths / 78 operations / 93 component schemas; internal references and example embedding checked (not a full OpenAPI product validator)"
+    },
+    {
+      "check": "MODEL_DDL_DICTIONARY_ER_STATIC",
+      "status": "PASS",
+      "detail": "67 tables / 817 columns / 287 foreign keys; names, target keys, scope columns, dictionary/DDL/ER counts matched. SQL execution NOT_RUN"
+    },
+    {
+      "check": "TRACEABILITY",
+      "status": "PASS",
+      "detail": "143 inherited IDs / 145 detailed requirements / 104 acceptance cases / all acceptance NOT_RUN"
+    },
+    {
+      "check": "MERMAID_RECORDED_RESULTS",
+      "status": "PASS",
+      "detail": "16 Mermaid sources parsed and rendered by local Mermaid engine; results are from the generation run"
+    },
+    {
+      "check": "LINKS_AND_BASELINE",
+      "status": "PASS",
+      "detail": "19 local links and original v3 SHA-256 checked"
+    }
+  ],
+  "counts": {
+    "tables": 67,
+    "columns": 817,
+    "foreign_keys": 287,
+    "paths": 72,
+    "operations": 78,
+    "legacy_requirements": 143,
+    "detailed_requirements": 145,
+    "acceptance_tests": 104,
+    "mermaid_sources": 16
+  }
+}

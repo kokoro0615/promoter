@@ -1,0 +1,14 @@
+{
+  "schema_version": "4.0.0",
+  "environment": "EXAMPLE_ONLY",
+  "pin_digits": 6,
+  "max_failed_attempts": 5,
+  "lockout_seconds": 300,
+  "idle_lock_seconds": 180,
+  "operator_max_seconds": 43200,
+  "lock_on_background": true,
+  "single_active_operator_per_device": true,
+  "device_credential_required": true,
+  "invalidate_old_tabs": true,
+  "cache_expiry_hours_after_event": 12
+}

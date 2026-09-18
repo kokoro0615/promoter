@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/nightclub/sync-event.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "stream_seq",
+    "event_type",
+    "aggregate_type",
+    "aggregate_id",
+    "aggregate_version",
+    "action"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "stream_seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "VISIT_CHANGED",
+        "APPROVAL_CHANGED",
+        "ENTRY_CHANGED",
+        "POLICY_CHANGED",
+        "BOOKING_CHANGED",
+        "SYNC_INVALIDATE"
+      ]
+    },
+    "aggregate_type": {
+      "type": "string",
+      "enum": [
+        "visit",
+        "approval_request",
+        "admission_segment",
+        "policy_version",
+        "booking"
+      ]
+    },
+    "aggregate_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "aggregate_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "INVALIDATE",
+        "REMOVE"
+      ]
+    }
+  }
+}

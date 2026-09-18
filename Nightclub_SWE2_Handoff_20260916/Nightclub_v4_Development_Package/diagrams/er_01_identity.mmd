@@ -1,0 +1,101 @@
+erDiagram
+    %% v4 R1 physical reference. Composite tenant/store/event FKs are defined in model.json.
+    tenants {
+        uuid id PK
+        text status
+        integer version
+    }
+    app_users {
+        uuid id PK
+        text status
+        integer version
+    }
+    external_identities {
+        uuid id PK
+        uuid user_id FK
+        integer version
+    }
+    auth_sessions {
+        uuid id PK
+        uuid user_id FK
+        integer version
+    }
+    stores {
+        uuid id PK
+        uuid tenant_id FK
+        text status
+        integer version
+    }
+    memberships {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid user_id FK
+        text status
+        integer version
+    }
+    roles {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+    }
+    role_permissions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid role_id FK
+        integer version
+    }
+    membership_roles {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid membership_id FK
+        uuid role_id FK
+        uuid granted_by FK
+        integer version
+    }
+    invitation_tokens {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid role_id FK
+        uuid issued_by FK
+        uuid used_by FK "nullable"
+        integer version
+    }
+    event_assignments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid membership_id FK
+        integer version
+    }
+    referrer_profiles {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid membership_id FK
+        integer version
+    }
+    events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    app_users ||..o{ external_identities : user_id
+    app_users ||..o{ auth_sessions : user_id
+    app_users ||..o{ memberships : user_id
+    roles ||..o{ role_permissions : role_id
+    memberships ||..o{ membership_roles : membership_id
+    roles ||..o{ membership_roles : role_id
+    memberships ||..o{ membership_roles : granted_by
+    roles ||..o{ invitation_tokens : role_id
+    memberships ||..o{ invitation_tokens : issued_by
+    app_users |o..o{ invitation_tokens : used_by
+    memberships ||..o{ event_assignments : membership_id
+    memberships ||..o{ referrer_profiles : membership_id

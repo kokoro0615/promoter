@@ -1,0 +1,27 @@
+sequenceDiagram
+    actor Ref as 紹介者
+    participant API as 業務API
+    participant DB as PostgreSQL
+    participant Gate as 共用入口PWA
+    participant Approver as 指定承認者
+    Ref->>API: フリー申請・Idempotency-Key
+    API->>DB: 来店・申請版・Outboxを同時保存
+    API-->>Gate: 承認待ちを同期
+    API-->>Approver: 同じ申請を表示
+    Note over Gate,Approver: 入口は不在確認・到着・待機時間を条件にせず判断できる
+    par 入口の承認
+        Gate->>API: 承認・expected_version・operator context
+    and 指定者の判断
+        Approver->>API: 同じ申請版を判断
+    end
+    API->>DB: 対象行をロック・権限/枠を検証
+    API->>DB: 最初の有効な決定・引当・監査・OutboxをCOMMIT
+    API-->>Gate: 確定結果または409と最新状態
+    API-->>Approver: 確定結果または409と最新状態
+    Note over Gate,DB: 承認だけでは入場人数・売上を増やさない
+    Gate->>API: 名前候補の顧客本人を照合
+    Gate->>API: 人数・条件版・支払参照で入場要求
+    API->>DB: 最新状態・残人数・支払・本人を再検証
+    API->>DB: 入場/必要売上/充当/枠/Outboxを同時確定
+    API-->>Gate: 実入場結果
+    API-->>Ref: 元の紹介者に実績反映

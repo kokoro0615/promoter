@@ -1,0 +1,170 @@
+erDiagram
+    %% v4 R1 physical reference. Composite tenant/store/event FKs are defined in model.json.
+    floor_maps {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        text status
+    }
+    venue_tables {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    bookings {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid customer_id FK "nullable"
+        text status
+        integer version
+    }
+    booking_decisions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid booking_id FK
+        uuid actor_membership_id FK
+    }
+    table_allocations {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid booking_id FK
+        uuid table_id FK
+        text status
+        integer version
+    }
+    sales_orders {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid booking_id FK "nullable"
+        text status
+        integer version
+    }
+    sales_lines {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid order_id FK
+        uuid segment_id FK "nullable"
+        uuid adjusts_line_id FK "nullable"
+    }
+    payments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid recorded_by FK "nullable"
+        uuid operator_session_id FK "nullable"
+        uuid order_id FK
+        bigint amount_minor
+        text status
+        integer version
+    }
+    payment_allocations {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid sales_line_id FK "nullable"
+        uuid payment_id FK
+        uuid order_id FK
+        bigint amount_minor
+        uuid reverses_id FK "nullable"
+    }
+    refunds {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid payment_id FK
+        bigint amount_minor
+        text status
+        uuid requested_by FK
+        integer version
+    }
+    payment_disputes {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid payment_id FK
+        bigint amount_minor
+        text status
+        integer version
+    }
+    coupon_redemptions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid coupon_id FK
+        uuid visit_id FK
+        uuid sales_line_id FK "nullable"
+        text status
+        integer version
+    }
+    visits {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid customer_id FK "nullable"
+        uuid referrer_membership_id FK "nullable"
+        uuid created_by FK "nullable"
+        text name_key
+        integer planned_count
+        text status
+        integer version
+    }
+    admission_segments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid price_rule_id FK
+        uuid permit_id FK "nullable"
+        uuid required_customer_id FK "nullable"
+        text status
+        text authorization_method "nullable"
+        integer version
+    }
+    visits ||..o{ bookings : visit_id
+    bookings ||..o{ booking_decisions : booking_id
+    bookings ||..o{ table_allocations : booking_id
+    venue_tables ||..o{ table_allocations : table_id
+    visits ||..o{ sales_orders : visit_id
+    bookings |o..o{ sales_orders : booking_id
+    bookings |o..o{ sales_orders : same_visit_booking_id
+    sales_orders ||..o{ sales_lines : order_id
+    admission_segments |o..o{ sales_lines : segment_id
+    sales_lines |o..o{ sales_lines : adjusts_line_id
+    sales_orders |o..o{ sales_lines : same_order_currency
+    sales_orders ||..o{ payments : order_id
+    sales_orders |o..o{ payments : same_order_currency
+    sales_lines |o..o{ payment_allocations : sales_line_id
+    payments ||..o{ payment_allocations : payment_id
+    sales_orders ||..o{ payment_allocations : order_id
+    payment_allocations |o..o{ payment_allocations : reverses_id
+    sales_orders |o..o{ payment_allocations : same_order_currency
+    payments |o..o{ payment_allocations : same_payment_currency
+    sales_lines |o..o{ payment_allocations : same_order_line_currency
+    payments ||..o{ refunds : payment_id
+    payments |o..o{ refunds : same_payment_currency
+    payments ||..o{ payment_disputes : payment_id
+    visits ||..o{ coupon_redemptions : visit_id
+    sales_lines |o..o{ coupon_redemptions : sales_line_id
+    visits ||..o{ admission_segments : visit_id

@@ -1,0 +1,818 @@
+﻿table,scope,column,type,nullable,primary_key,reference,default,check,description
+tenants,global,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+tenants,global,name,text,False,False,,,,name
+tenants,global,status,text,False,False,,'ACTIVE',"status IN ('ACTIVE', 'SUSPENDED', 'CLOSED')",status
+tenants,global,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+tenants,global,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+tenants,global,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+app_users,global,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+app_users,global,display_name,text,False,False,,,,display_name
+app_users,global,status,text,False,False,,'ACTIVE',"status IN ('ACTIVE', 'SUSPENDED')",status
+app_users,global,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+app_users,global,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+app_users,global,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+external_identities,global,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+external_identities,global,user_id,uuid,False,False,app_users,,,user_id
+external_identities,global,issuer,text,False,False,,,,issuer
+external_identities,global,client_id,text,False,False,,,,client_id
+external_identities,global,subject,text,False,False,,,,subject
+external_identities,global,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+external_identities,global,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+external_identities,global,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+auth_sessions,global,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+auth_sessions,global,user_id,uuid,False,False,app_users,,,user_id
+auth_sessions,global,token_hash,text,False,False,,,,ランダムセッションのハッシュ
+auth_sessions,global,expires_at,timestamptz,False,False,,,,expires_at
+auth_sessions,global,revoked_at,timestamptz,True,False,,,,revoked_at
+auth_sessions,global,step_up_at,timestamptz,True,False,,,,step_up_at
+auth_sessions,global,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+auth_sessions,global,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+auth_sessions,global,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+stores,tenant,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+stores,tenant,tenant_id,uuid,False,False,tenants,,,テナント境界
+stores,tenant,name,text,False,False,,,,name
+stores,tenant,timezone,text,False,False,,'Asia/Tokyo',,timezone
+stores,tenant,currency,char(3),False,False,,'JPY',,currency
+stores,tenant,status,text,False,False,,'ACTIVE',"status IN ('ACTIVE', 'SUSPENDED', 'CLOSED')",status
+stores,tenant,version,integer,False,False,,1,version > 0,version
+stores,tenant,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+stores,tenant,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+memberships,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+memberships,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+memberships,store,store_id,uuid,False,False,stores,,,店舗境界
+memberships,store,user_id,uuid,False,False,app_users,,,user_id
+memberships,store,display_name,text,False,False,,,,display_name
+memberships,store,status,text,False,False,,'INVITED',"status IN ('INVITED', 'ACTIVE', 'SUSPENDED', 'ENDED')",status
+memberships,store,valid_from,timestamptz,False,False,,,,valid_from
+memberships,store,valid_to,timestamptz,True,False,,,,valid_to
+memberships,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+memberships,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+memberships,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+roles,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+roles,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+roles,store,store_id,uuid,False,False,stores,,,店舗境界
+roles,store,role_key,text,False,False,,,,role_key
+roles,store,name,text,False,False,,,,name
+roles,store,version,integer,False,False,,1,version > 0,version
+roles,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+roles,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+role_permissions,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+role_permissions,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+role_permissions,store,store_id,uuid,False,False,stores,,,店舗境界
+role_permissions,store,role_id,uuid,False,False,roles,,,role_id
+role_permissions,store,permission_key,text,False,False,,,,permission_key
+role_permissions,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+role_permissions,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+role_permissions,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+membership_roles,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+membership_roles,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+membership_roles,store,store_id,uuid,False,False,stores,,,店舗境界
+membership_roles,store,membership_id,uuid,False,False,memberships,,,membership_id
+membership_roles,store,role_id,uuid,False,False,roles,,,role_id
+membership_roles,store,granted_by,uuid,False,False,memberships,,,granted_by
+membership_roles,store,expires_at,timestamptz,True,False,,,,expires_at
+membership_roles,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+membership_roles,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+membership_roles,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+invitation_tokens,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+invitation_tokens,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+invitation_tokens,store,store_id,uuid,False,False,stores,,,店舗境界
+invitation_tokens,store,token_hash,text,False,False,,,,token_hash
+invitation_tokens,store,invite_target,text,False,False,,,,招待先。必要な場合に限定
+invitation_tokens,store,role_id,uuid,False,False,roles,,,role_id
+invitation_tokens,store,issued_by,uuid,False,False,memberships,,,issued_by
+invitation_tokens,store,expires_at,timestamptz,False,False,,,,expires_at
+invitation_tokens,store,used_at,timestamptz,True,False,,,,used_at
+invitation_tokens,store,used_by,uuid,True,False,app_users,,,used_by
+invitation_tokens,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+invitation_tokens,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+invitation_tokens,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+events,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+events,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+events,store,store_id,uuid,False,False,stores,,,店舗境界
+events,store,name,text,False,False,,,,name
+events,store,opens_at,timestamptz,False,False,,,,opens_at
+events,store,closes_at,timestamptz,False,False,,,,closes_at
+events,store,status,text,False,False,,'DRAFT',"status IN ('DRAFT', 'PUBLISHED', 'OPEN', 'RECONCILING', 'CLOSED')",status
+events,store,version,integer,False,False,,1,version > 0,version
+events,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+events,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+event_assignments,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+event_assignments,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+event_assignments,event,store_id,uuid,False,False,stores,,,店舗境界
+event_assignments,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+event_assignments,event,membership_id,uuid,False,False,memberships,,,membership_id
+event_assignments,event,assignment_kind,text,False,False,,,"assignment_kind IN ('REFERRER', 'DESIGNATED_APPROVER', 'ENTRANCE', 'ENTRANCE_APPROVER', 'RESERVATION')",assignment_kind
+event_assignments,event,starts_at,timestamptz,False,False,,,,starts_at
+event_assignments,event,ends_at,timestamptz,False,False,,,,ends_at
+event_assignments,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+event_assignments,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+event_assignments,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+devices,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+devices,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+devices,store,store_id,uuid,False,False,stores,,,店舗境界
+devices,store,label,text,False,False,,,,label
+devices,store,status,text,False,False,,'PENDING',"status IN ('PENDING', 'ACTIVE', 'REVOKED')",status
+devices,store,enrolled_by,uuid,False,False,memberships,,,enrolled_by
+devices,store,operator_epoch,bigint,False,False,,0,operator_epoch >= 0,operator_epoch
+devices,store,revoked_at,timestamptz,True,False,,,,revoked_at
+devices,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+devices,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+devices,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+device_enrollments,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+device_enrollments,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+device_enrollments,store,store_id,uuid,False,False,stores,,,店舗境界
+device_enrollments,store,device_id,uuid,False,False,devices,,,device_id
+device_enrollments,store,code_hash,text,False,False,,,,code_hash
+device_enrollments,store,issued_by,uuid,False,False,memberships,,,issued_by
+device_enrollments,store,expires_at,timestamptz,False,False,,,,expires_at
+device_enrollments,store,consumed_at,timestamptz,True,False,,,,consumed_at
+device_enrollments,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+device_enrollments,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+device_enrollments,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+device_sessions,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+device_sessions,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+device_sessions,store,store_id,uuid,False,False,stores,,,店舗境界
+device_sessions,store,device_id,uuid,False,False,devices,,,device_id
+device_sessions,store,token_hash,text,False,False,,,,token_hash
+device_sessions,store,expires_at,timestamptz,False,False,,,,expires_at
+device_sessions,store,revoked_at,timestamptz,True,False,,,,revoked_at
+device_sessions,store,last_seen_at,timestamptz,True,False,,,,last_seen_at
+device_sessions,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+device_sessions,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+device_sessions,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+operator_credentials,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+operator_credentials,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+operator_credentials,store,store_id,uuid,False,False,stores,,,店舗境界
+operator_credentials,store,membership_id,uuid,False,False,memberships,,,membership_id
+operator_credentials,store,pin_hash,text,False,False,,,,Argon2id等。salt含む。pepperはDB外
+operator_credentials,store,failed_attempts,integer,False,False,,0,failed_attempts >= 0,failed_attempts
+operator_credentials,store,locked_until,timestamptz,True,False,,,,locked_until
+operator_credentials,store,credential_version,integer,False,False,,1,credential_version > 0,credential_version
+operator_credentials,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+operator_credentials,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+operator_credentials,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+operator_sessions,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+operator_sessions,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+operator_sessions,event,store_id,uuid,False,False,stores,,,店舗境界
+operator_sessions,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+operator_sessions,event,device_id,uuid,False,False,devices,,,device_id
+operator_sessions,event,device_session_id,uuid,False,False,device_sessions,,,device_session_id
+operator_sessions,event,membership_id,uuid,False,False,memberships,,,membership_id
+operator_sessions,event,operator_epoch,bigint,False,False,,,operator_epoch > 0,operator_epoch
+operator_sessions,event,token_hash,text,False,False,,,,token_hash
+operator_sessions,event,expires_at,timestamptz,False,False,,,,expires_at
+operator_sessions,event,locked_at,timestamptz,True,False,,,,locked_at
+operator_sessions,event,ended_at,timestamptz,True,False,,,,ended_at
+operator_sessions,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+operator_sessions,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+operator_sessions,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+customers,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+customers,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+customers,store,store_id,uuid,False,False,stores,,,店舗境界
+customers,store,display_name,text,False,False,,,,display_name
+customers,store,name_key,text,False,False,,,,検索用正規化。本人IDではない
+customers,store,kana_key,text,True,False,,,,任意読みの正規化
+customers,store,regular_status,text,False,False,,'NONE',"regular_status IN ('NONE', 'DESIGNATED', 'REVOKED')",regular_status
+customers,store,masked_hint,text,True,False,,,,照合用の最小ヒント。詳細PIIは返さない
+customers,store,contact_ciphertext,text,True,False,,,,必要時だけ暗号化した連絡先
+customers,store,version,integer,False,False,,1,version > 0,version
+customers,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+customers,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+customer_aliases,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+customer_aliases,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+customer_aliases,store,store_id,uuid,False,False,stores,,,店舗境界
+customer_aliases,store,customer_id,uuid,False,False,customers,,,customer_id
+customer_aliases,store,alias,text,False,False,,,,alias
+customer_aliases,store,alias_key,text,False,False,,,,alias_key
+customer_aliases,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+customer_aliases,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+customer_aliases,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+operating_templates,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+operating_templates,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+operating_templates,store,store_id,uuid,False,False,stores,,,店舗境界
+operating_templates,store,name,text,False,False,,,,name
+operating_templates,store,settings,jsonb,False,False,,,,policy.schema.jsonに従う
+operating_templates,store,version,integer,False,False,,1,version > 0,version
+operating_templates,store,created_by,uuid,False,False,memberships,,,created_by
+operating_templates,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+operating_templates,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+policy_versions,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+policy_versions,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+policy_versions,event,store_id,uuid,False,False,stores,,,店舗境界
+policy_versions,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+policy_versions,event,version,integer,False,False,,,version > 0,version
+policy_versions,event,status,text,False,False,,'DRAFT',"status IN ('DRAFT', 'PUBLISHED', 'SUPERSEDED')",status
+policy_versions,event,settings,jsonb,False,False,,,,settings
+policy_versions,event,effective_from,timestamptz,False,False,,,,effective_from
+policy_versions,event,effective_to,timestamptz,False,False,,,,effective_to
+policy_versions,event,apply_mode,text,False,False,,'NEW_ONLY',"apply_mode IN ('NEW_ONLY', 'REASSESS_UNENTERED')",apply_mode
+policy_versions,event,published_by,uuid,True,False,memberships,,,published_by
+policy_versions,event,published_at,timestamptz,True,False,,,,published_at
+policy_versions,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+policy_versions,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+price_rules,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+price_rules,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+price_rules,event,store_id,uuid,False,False,stores,,,店舗境界
+price_rules,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+price_rules,event,policy_version_id,uuid,False,False,policy_versions,,,policy_version_id
+price_rules,event,rule_key,text,False,False,,,,rule_key
+price_rules,event,price_kind,text,False,False,,,"price_kind IN ('NORMAL', 'DISCOUNT', 'FREE')",price_kind
+price_rules,event,amount_minor,bigint,False,False,,,amount_minor >= 0,amount_minor
+price_rules,event,currency,char(3),False,False,,,,currency
+price_rules,event,entry_from,timestamptz,False,False,,,,entry_from
+price_rules,event,entry_to,timestamptz,False,False,,,,entry_to
+price_rules,event,payment_required,boolean,False,False,,true,,payment_required
+price_rules,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+price_rules,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+price_rules,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+permits,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+permits,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+permits,store,store_id,uuid,False,False,stores,,,店舗境界
+permits,store,permit_key,uuid,False,False,,,,版をまたぐ論理許可ID
+permits,store,version,integer,False,False,,,version > 0,version
+permits,store,subject_kind,text,False,False,,,"subject_kind IN ('CUSTOMER', 'ACTOR')",subject_kind
+permits,store,customer_id,uuid,True,False,customers,,,customer_id
+permits,store,actor_membership_id,uuid,True,False,memberships,,,actor_membership_id
+permits,store,granted_by,uuid,False,False,memberships,,,granted_by
+permits,store,conditions,jsonb,False,False,,,,permit.schema.json
+permits,store,valid_from,timestamptz,False,False,,,,valid_from
+permits,store,valid_to,timestamptz,False,False,,,,valid_to
+permits,store,status,text,False,False,,'ACTIVE',"status IN ('ACTIVE', 'REVOKED')",status
+permits,store,supersedes_id,uuid,True,False,permits,,,supersedes_id
+permits,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+permits,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+referrer_profiles,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+referrer_profiles,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+referrer_profiles,store,store_id,uuid,False,False,stores,,,店舗境界
+referrer_profiles,store,membership_id,uuid,False,False,memberships,,,membership_id
+referrer_profiles,store,stage_name,text,False,False,,,,stage_name
+referrer_profiles,store,categories,text[],False,False,,'{}',,複数区分可
+referrer_profiles,store,contract_reference,text,True,False,,,,contract_reference
+referrer_profiles,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+referrer_profiles,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+referrer_profiles,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+invitation_links,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+invitation_links,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+invitation_links,event,store_id,uuid,False,False,stores,,,店舗境界
+invitation_links,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+invitation_links,event,referrer_membership_id,uuid,False,False,memberships,,,referrer_membership_id
+invitation_links,event,token_hash,text,False,False,,,,token_hash
+invitation_links,event,expires_at,timestamptz,False,False,,,,expires_at
+invitation_links,event,status,text,False,False,,'ACTIVE',"status IN ('ACTIVE', 'REVOKED')",status
+invitation_links,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+invitation_links,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+invitation_links,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+coupons,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+coupons,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+coupons,store,store_id,uuid,False,False,stores,,,店舗境界
+coupons,store,code_hash,text,False,False,,,,code_hash
+coupons,store,version,integer,False,False,,1,version > 0,version
+coupons,store,owner_membership_id,uuid,True,False,memberships,,,owner_membership_id
+coupons,store,conditions,jsonb,False,False,,,,conditions
+coupons,store,valid_from,timestamptz,False,False,,,,valid_from
+coupons,store,valid_to,timestamptz,False,False,,,,valid_to
+coupons,store,status,text,False,False,,'DRAFT',"status IN ('DRAFT', 'ACTIVE', 'REVOKED')",status
+coupons,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+coupons,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+visits,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+visits,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+visits,event,store_id,uuid,False,False,stores,,,店舗境界
+visits,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+visits,event,customer_id,uuid,True,False,customers,,,customer_id
+visits,event,referrer_membership_id,uuid,True,False,memberships,,,referrer_membership_id
+visits,event,created_by,uuid,True,False,memberships,,,created_by
+visits,event,source,text,False,False,,,"source IN ('STAFF', 'PUBLIC_LINK', 'VIP_FORM', 'IMPORT', 'WALK_IN')",source
+visits,event,reception_name,text,False,False,,,,reception_name
+visits,event,name_key,text,False,False,,,,name_key
+visits,event,planned_count,integer,False,False,,,planned_count > 0,planned_count
+visits,event,arrival_status,text,False,False,,'UNKNOWN',"arrival_status IN ('UNKNOWN', 'ON_WAY', 'ARRIVED')",arrival_status
+visits,event,status,text,False,False,,'ACTIVE',"status IN ('ACTIVE', 'CANCELED', 'NO_SHOW', 'CLOSED')",status
+visits,event,version,integer,False,False,,1,version > 0,version
+visits,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+visits,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+visit_members,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+visit_members,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+visit_members,event,store_id,uuid,False,False,stores,,,店舗境界
+visit_members,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+visit_members,event,visit_id,uuid,False,False,visits,,,visit_id
+visit_members,event,customer_id,uuid,True,False,customers,,,customer_id
+visit_members,event,display_name,text,True,False,,,,display_name
+visit_members,event,member_kind,text,False,False,,,"member_kind IN ('PRINCIPAL', 'COMPANION')",member_kind
+visit_members,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+visit_members,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+visit_members,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+customer_checks,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+customer_checks,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+customer_checks,event,store_id,uuid,False,False,stores,,,店舗境界
+customer_checks,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+customer_checks,event,visit_id,uuid,False,False,visits,,,visit_id
+customer_checks,event,customer_id,uuid,False,False,customers,,,customer_id
+customer_checks,event,checked_by,uuid,False,False,memberships,,,checked_by
+customer_checks,event,operator_session_id,uuid,True,False,operator_sessions,,,operator_session_id
+customer_checks,event,method,text,False,False,,,"method IN ('KNOWN_BY_STAFF', 'BOOKING_CONTEXT', 'CONTACT_HINT', 'OTHER')",method
+customer_checks,event,note,text,True,False,,,,必要最小限の説明。ID画像は保存しない
+customer_checks,event,valid_until,timestamptz,False,False,,,,valid_until
+customer_checks,event,revoked_at,timestamptz,True,False,,,,revoked_at
+customer_checks,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+admission_segments,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+admission_segments,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+admission_segments,event,store_id,uuid,False,False,stores,,,店舗境界
+admission_segments,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+admission_segments,event,visit_id,uuid,False,False,visits,,,visit_id
+admission_segments,event,price_rule_id,uuid,False,False,price_rules,,,price_rule_id
+admission_segments,event,permit_id,uuid,True,False,permits,,,permit_id
+admission_segments,event,required_customer_id,uuid,True,False,customers,,,required_customer_id
+admission_segments,event,requested_count,integer,False,False,,,requested_count > 0,requested_count
+admission_segments,event,authorized_count,integer,False,False,,0,authorized_count >= 0,authorized_count
+admission_segments,event,first_entered_count,integer,False,False,,0,first_entered_count >= 0,first_entered_count
+admission_segments,event,unit_amount_minor,bigint,False,False,,,unit_amount_minor >= 0,unit_amount_minor
+admission_segments,event,currency,char(3),False,False,,,,currency
+admission_segments,event,status,text,False,False,,'PENDING',"status IN ('PENDING', 'AUTHORIZED', 'REJECTED', 'RETURNED', 'REVOKED', 'EXPIRED')",status
+admission_segments,event,authorization_method,text,True,False,,,"authorization_method IN ('STANDARD', 'TRUSTED_ACTOR', 'CUSTOMER_PERMIT', 'MANUAL')",authorization_method
+admission_segments,event,snapshot,jsonb,False,False,,,,設定・条件・許可の判定根拠
+admission_segments,event,version,integer,False,False,,1,version > 0,version
+admission_segments,event,entry_until,timestamptz,False,False,,,,entry_until
+admission_segments,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+admission_segments,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+approval_requests,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+approval_requests,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+approval_requests,event,store_id,uuid,False,False,stores,,,店舗境界
+approval_requests,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+approval_requests,event,segment_id,uuid,False,False,admission_segments,,,segment_id
+approval_requests,event,requested_by,uuid,False,False,memberships,,,requested_by
+approval_requests,event,request_version,integer,False,False,,,request_version > 0,request_version
+approval_requests,event,segment_version,integer,False,False,,,segment_version > 0,segment_version
+approval_requests,event,reason,text,False,False,,,,reason
+approval_requests,event,status,text,False,False,,'PENDING',"status IN ('PENDING', 'APPROVED', 'REJECTED', 'RETURNED', 'SUPERSEDED')",status
+approval_requests,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+approval_requests,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+approval_requests,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+approval_decisions,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+approval_decisions,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+approval_decisions,event,store_id,uuid,False,False,stores,,,店舗境界
+approval_decisions,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+approval_decisions,event,request_id,uuid,False,False,approval_requests,,,request_id
+approval_decisions,event,decided_by,uuid,False,False,memberships,,,decided_by
+approval_decisions,event,operator_session_id,uuid,True,False,operator_sessions,,,operator_session_id
+approval_decisions,event,route,text,False,False,,,"route IN ('DESIGNATED', 'ENTRANCE')",route
+approval_decisions,event,decision,text,False,False,,,"decision IN ('APPROVED', 'REJECTED', 'RETURNED')",decision
+approval_decisions,event,reason,text,True,False,,,,reason
+approval_decisions,event,operation_id,uuid,False,False,,,,operation_id
+approval_decisions,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+quota_buckets,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+quota_buckets,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+quota_buckets,event,store_id,uuid,False,False,stores,,,店舗境界
+quota_buckets,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+quota_buckets,event,bucket_key,text,False,False,,,,安定した枠キー
+quota_buckets,event,bucket_kind,text,False,False,,,"bucket_kind IN ('EVENT_HARD', 'ACTOR_BYPASS', 'CUSTOMER', 'MANUAL_DECIDER')",bucket_kind
+quota_buckets,event,limit_mode,text,False,False,,,"limit_mode IN ('LIMITED', 'UNLIMITED')",limit_mode
+quota_buckets,event,limit_count,integer,True,False,,,limit_count IS NULL OR limit_count >= 0,limit_count
+quota_buckets,event,held_count,integer,False,False,,0,held_count >= 0,held_count
+quota_buckets,event,consumed_count,integer,False,False,,0,consumed_count >= 0,consumed_count
+quota_buckets,event,version,integer,False,False,,1,version > 0,version
+quota_buckets,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+quota_buckets,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+quota_allocations,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+quota_allocations,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+quota_allocations,event,store_id,uuid,False,False,stores,,,店舗境界
+quota_allocations,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+quota_allocations,event,bucket_id,uuid,False,False,quota_buckets,,,bucket_id
+quota_allocations,event,segment_id,uuid,False,False,admission_segments,,,segment_id
+quota_allocations,event,held_count,integer,False,False,,0,held_count >= 0,held_count
+quota_allocations,event,consumed_count,integer,False,False,,0,consumed_count >= 0,consumed_count
+quota_allocations,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+quota_allocations,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+quota_allocations,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+entry_passes,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+entry_passes,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+entry_passes,event,store_id,uuid,False,False,stores,,,店舗境界
+entry_passes,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+entry_passes,event,visit_id,uuid,False,False,visits,,,visit_id
+entry_passes,event,member_id,uuid,True,False,visit_members,,,member_id
+entry_passes,event,token_hash,text,False,False,,,,token_hash
+entry_passes,event,pass_kind,text,False,False,,,"pass_kind IN ('GROUP_LOOKUP', 'INDIVIDUAL_REENTRY')",pass_kind
+entry_passes,event,presence,text,False,False,,'NOT_ENTERED',"presence IN ('NOT_ENTERED', 'INSIDE', 'OUTSIDE')",presence
+entry_passes,event,expires_at,timestamptz,False,False,,,,expires_at
+entry_passes,event,revoked_at,timestamptz,True,False,,,,revoked_at
+entry_passes,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+entry_passes,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+entry_passes,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+admission_events,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+admission_events,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+admission_events,event,store_id,uuid,False,False,stores,,,店舗境界
+admission_events,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+admission_events,event,visit_id,uuid,False,False,visits,,,visit_id
+admission_events,event,segment_id,uuid,False,False,admission_segments,,,segment_id
+admission_events,event,pass_id,uuid,True,False,entry_passes,,,pass_id
+admission_events,event,operator_session_id,uuid,False,False,operator_sessions,,,operator_session_id
+admission_events,event,actor_membership_id,uuid,False,False,memberships,,,actor_membership_id
+admission_events,event,customer_check_id,uuid,True,False,customer_checks,,,customer_check_id
+admission_events,event,kind,text,False,False,,,"kind IN ('FIRST_ENTRY', 'EXIT', 'REENTRY', 'CORRECTION')",kind
+admission_events,event,quantity,integer,False,False,,,quantity > 0,quantity
+admission_events,event,present_delta,integer,False,False,,,,present_delta
+admission_events,event,first_entry_delta,integer,False,False,,,,first_entry_delta
+admission_events,event,corrects_id,uuid,True,False,admission_events,,,corrects_id
+admission_events,event,operation_id,uuid,False,False,,,,operation_id
+admission_events,event,reason,text,True,False,,,,reason
+admission_events,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+provisional_entries,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+provisional_entries,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+provisional_entries,event,store_id,uuid,False,False,stores,,,店舗境界
+provisional_entries,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+provisional_entries,event,device_id,uuid,False,False,devices,,,device_id
+provisional_entries,event,actor_membership_id,uuid,False,False,memberships,,,actor_membership_id
+provisional_entries,event,visit_id,uuid,True,False,visits,,,visit_id
+provisional_entries,event,local_operation_id,uuid,False,False,,,,local_operation_id
+provisional_entries,event,device_time,timestamptz,False,False,,,,device_time
+provisional_entries,event,quantity,integer,False,False,,,quantity>0,quantity
+provisional_entries,event,reception_name,text,False,False,,,,reception_name
+provisional_entries,event,reason,text,False,False,,,,reason
+provisional_entries,event,status,text,False,False,,'UNRECONCILED',"status IN ('UNRECONCILED', 'RECONCILED', 'DUPLICATE', 'REJECTED')",status
+provisional_entries,event,reconciled_entry_id,uuid,True,False,admission_events,,,reconciled_entry_id
+provisional_entries,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+provisional_entries,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+provisional_entries,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+floor_maps,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+floor_maps,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+floor_maps,store,store_id,uuid,False,False,stores,,,店舗境界
+floor_maps,store,version,integer,False,False,,,version > 0,version
+floor_maps,store,layout,jsonb,False,False,,,,layout
+floor_maps,store,status,text,False,False,,'DRAFT',"status IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')",status
+floor_maps,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+floor_maps,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+venue_tables,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+venue_tables,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+venue_tables,store,store_id,uuid,False,False,stores,,,店舗境界
+venue_tables,store,table_code,text,False,False,,,,table_code
+venue_tables,store,zone,text,False,False,,,,zone
+venue_tables,store,capacity_min,integer,False,False,,,capacity_min>0,capacity_min
+venue_tables,store,capacity_max,integer,False,False,,,,capacity_max
+venue_tables,store,status,text,False,False,,'ACTIVE',"status IN ('ACTIVE', 'BLOCKED', 'RETIRED')",status
+venue_tables,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+venue_tables,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+venue_tables,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+bookings,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+bookings,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+bookings,event,store_id,uuid,False,False,stores,,,店舗境界
+bookings,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+bookings,event,visit_id,uuid,False,False,visits,,,visit_id
+bookings,event,customer_id,uuid,True,False,customers,,,customer_id
+bookings,event,party_count,integer,False,False,,,party_count>0,party_count
+bookings,event,starts_at,timestamptz,False,False,,,,starts_at
+bookings,event,ends_at,timestamptz,False,False,,,,ends_at
+bookings,event,hold_expires_at,timestamptz,True,False,,,,hold_expires_at
+bookings,event,status,text,False,False,,'HOLD',"status IN ('HOLD', 'PAYMENT_PENDING', 'APPROVAL_PENDING', 'CONFIRMED', 'CANCELED', 'NO_SHOW', 'PAYMENT_EXCEPTION')",status
+bookings,event,admission_pricing,text,False,False,,,"admission_pricing IN ('INCLUDED', 'SEPARATE')",admission_pricing
+bookings,event,minimum_minor,bigint,False,False,,,minimum_minor>=0,minimum_minor
+bookings,event,deposit_minor,bigint,False,False,,,deposit_minor>=0,deposit_minor
+bookings,event,currency,char(3),False,False,,,,currency
+bookings,event,policy_snapshot,jsonb,False,False,,,,policy_snapshot
+bookings,event,version,integer,False,False,,1,version>0,version
+bookings,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+bookings,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+booking_decisions,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+booking_decisions,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+booking_decisions,event,store_id,uuid,False,False,stores,,,店舗境界
+booking_decisions,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+booking_decisions,event,booking_id,uuid,False,False,bookings,,,booking_id
+booking_decisions,event,booking_version,integer,False,False,,,booking_version>0,booking_version
+booking_decisions,event,actor_membership_id,uuid,False,False,memberships,,,actor_membership_id
+booking_decisions,event,decision,text,False,False,,,"decision IN ('APPROVED', 'REJECTED')",decision
+booking_decisions,event,reason,text,True,False,,,,reason
+booking_decisions,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+table_allocations,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+table_allocations,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+table_allocations,event,store_id,uuid,False,False,stores,,,店舗境界
+table_allocations,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+table_allocations,event,booking_id,uuid,False,False,bookings,,,booking_id
+table_allocations,event,table_id,uuid,False,False,venue_tables,,,table_id
+table_allocations,event,occupied_during,tstzrange,False,False,,,,occupied_during
+table_allocations,event,status,text,False,False,,'HELD',"status IN ('HELD', 'CONFIRMED', 'RELEASED')",status
+table_allocations,event,expires_at,timestamptz,True,False,,,,expires_at
+table_allocations,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+table_allocations,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+table_allocations,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+sales_orders,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+sales_orders,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+sales_orders,event,store_id,uuid,False,False,stores,,,店舗境界
+sales_orders,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+sales_orders,event,kind,text,False,False,,,"kind IN ('ADMISSION', 'VIP', 'IN_VENUE')",kind
+sales_orders,event,visit_id,uuid,False,False,visits,,,visit_id
+sales_orders,event,booking_id,uuid,True,False,bookings,,,booking_id
+sales_orders,event,currency,char(3),False,False,,,,currency
+sales_orders,event,status,text,False,False,,'DRAFT',"status IN ('DRAFT', 'FINALIZED', 'ADJUSTED', 'VOID')",status
+sales_orders,event,external_system,text,True,False,,,,external_system
+sales_orders,event,external_order_id,text,True,False,,,,external_order_id
+sales_orders,event,version,integer,False,False,,1,version>0,version
+sales_orders,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+sales_orders,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+sales_lines,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+sales_lines,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+sales_lines,event,store_id,uuid,False,False,stores,,,店舗境界
+sales_lines,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+sales_lines,event,order_id,uuid,False,False,sales_orders,,,order_id
+sales_lines,event,segment_id,uuid,True,False,admission_segments,,,segment_id
+sales_lines,event,category,text,False,False,,,"category IN ('ADMISSION', 'VIP', 'IN_VENUE', 'CANCELLATION', 'REENTRY')",category
+sales_lines,event,line_kind,text,False,False,,,"line_kind IN ('SALE', 'CREDIT')",line_kind
+sales_lines,event,description,text,False,False,,,,description
+sales_lines,event,quantity,integer,False,False,,,quantity>0,quantity
+sales_lines,event,gross_minor,bigint,False,False,,,,gross_minor
+sales_lines,event,tax_minor,bigint,False,False,,,,tax_minor
+sales_lines,event,currency,char(3),False,False,,,,currency
+sales_lines,event,adjusts_line_id,uuid,True,False,sales_lines,,,adjusts_line_id
+sales_lines,event,source_key,text,False,False,,,,入場操作や外部明細IDの重複防止キー
+sales_lines,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+payments,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+payments,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+payments,event,store_id,uuid,False,False,stores,,,店舗境界
+payments,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+payments,event,recorded_by,uuid,True,False,memberships,,,recorded_by
+payments,event,operator_session_id,uuid,True,False,operator_sessions,,,operator_session_id
+payments,event,order_id,uuid,False,False,sales_orders,,,order_id
+payments,event,method,text,False,False,,,"method IN ('CASH', 'EXTERNAL_TERMINAL', 'PSP')",method
+payments,event,purpose,text,False,False,,,"purpose IN ('DEPOSIT', 'FINAL', 'ADMISSION')",purpose
+payments,event,amount_minor,bigint,False,False,,,amount_minor>0,amount_minor
+payments,event,currency,char(3),False,False,,,,currency
+payments,event,status,text,False,False,,'CREATED',"status IN ('CREATED', 'PROCESSING', 'SUCCEEDED', 'FAILED', 'PARTIAL_REFUND', 'REFUNDED', 'DISPUTED')",status
+payments,event,provider,text,True,False,,,,provider
+payments,event,provider_account,text,True,False,,,,provider_account
+payments,event,provider_reference,text,True,False,,,,provider_reference
+payments,event,operation_id,uuid,False,False,,,,operation_id
+payments,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+payments,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+payments,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+payment_allocations,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+payment_allocations,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+payment_allocations,event,store_id,uuid,False,False,stores,,,店舗境界
+payment_allocations,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+payment_allocations,event,sales_line_id,uuid,True,False,sales_lines,,,sales_line_id
+payment_allocations,event,payment_id,uuid,False,False,payments,,,payment_id
+payment_allocations,event,order_id,uuid,False,False,sales_orders,,,order_id
+payment_allocations,event,amount_minor,bigint,False,False,,,amount_minor<>0,amount_minor
+payment_allocations,event,currency,char(3),False,False,,,,currency
+payment_allocations,event,reverses_id,uuid,True,False,payment_allocations,,,reverses_id
+payment_allocations,event,operation_id,uuid,False,False,,,,operation_id
+payment_allocations,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+refunds,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+refunds,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+refunds,event,store_id,uuid,False,False,stores,,,店舗境界
+refunds,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+refunds,event,payment_id,uuid,False,False,payments,,,payment_id
+refunds,event,amount_minor,bigint,False,False,,,amount_minor>0,amount_minor
+refunds,event,currency,char(3),False,False,,,,currency
+refunds,event,status,text,False,False,,'REQUESTED',"status IN ('REQUESTED', 'PROCESSING', 'SUCCEEDED', 'FAILED')",status
+refunds,event,reason,text,False,False,,,,reason
+refunds,event,requested_by,uuid,False,False,memberships,,,requested_by
+refunds,event,provider_reference,text,True,False,,,,provider_reference
+refunds,event,operation_id,uuid,False,False,,,,operation_id
+refunds,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+refunds,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+refunds,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+payment_disputes,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+payment_disputes,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+payment_disputes,event,store_id,uuid,False,False,stores,,,店舗境界
+payment_disputes,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+payment_disputes,event,payment_id,uuid,False,False,payments,,,payment_id
+payment_disputes,event,provider_reference,text,False,False,,,,provider_reference
+payment_disputes,event,amount_minor,bigint,False,False,,,amount_minor>0,amount_minor
+payment_disputes,event,status,text,False,False,,,"status IN ('OPEN', 'WON', 'LOST', 'CLOSED')",status
+payment_disputes,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+payment_disputes,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+payment_disputes,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+coupon_redemptions,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+coupon_redemptions,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+coupon_redemptions,event,store_id,uuid,False,False,stores,,,店舗境界
+coupon_redemptions,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+coupon_redemptions,event,coupon_id,uuid,False,False,coupons,,,coupon_id
+coupon_redemptions,event,visit_id,uuid,False,False,visits,,,visit_id
+coupon_redemptions,event,sales_line_id,uuid,True,False,sales_lines,,,sales_line_id
+coupon_redemptions,event,status,text,False,False,,,"status IN ('HELD', 'CONSUMED', 'RELEASED')",status
+coupon_redemptions,event,operation_id,uuid,False,False,,,,operation_id
+coupon_redemptions,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+coupon_redemptions,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+coupon_redemptions,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+sales_attributions,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+sales_attributions,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+sales_attributions,event,store_id,uuid,False,False,stores,,,店舗境界
+sales_attributions,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+sales_attributions,event,sales_line_id,uuid,False,False,sales_lines,,,sales_line_id
+sales_attributions,event,referrer_membership_id,uuid,False,False,memberships,,,referrer_membership_id
+sales_attributions,event,basis_points,integer,False,False,,,basis_points BETWEEN 1 AND 10000,basis_points
+sales_attributions,event,version,integer,False,False,,1,version>0,version
+sales_attributions,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+sales_attributions,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+reward_rules,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+reward_rules,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+reward_rules,store,store_id,uuid,False,False,stores,,,店舗境界
+reward_rules,store,rule_key,uuid,False,False,,,,rule_key
+reward_rules,store,version,integer,False,False,,,version>0,version
+reward_rules,store,referrer_membership_id,uuid,True,False,memberships,,,referrer_membership_id
+reward_rules,store,conditions,jsonb,False,False,,,,conditions
+reward_rules,store,valid_from,timestamptz,False,False,,,,valid_from
+reward_rules,store,valid_to,timestamptz,False,False,,,,valid_to
+reward_rules,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+reward_rules,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+settlements,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+settlements,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+settlements,event,store_id,uuid,False,False,stores,,,店舗境界
+settlements,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+settlements,event,version,integer,False,False,,,version>0,version
+settlements,event,status,text,False,False,,'DRAFT',"status IN ('DRAFT', 'RECONCILING', 'FINALIZED')",status
+settlements,event,finalized_by,uuid,True,False,memberships,,,finalized_by
+settlements,event,finalized_at,timestamptz,True,False,,,,finalized_at
+settlements,event,exception_note,text,True,False,,,,exception_note
+settlements,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+settlements,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+settlement_lines,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+settlement_lines,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+settlement_lines,event,store_id,uuid,False,False,stores,,,店舗境界
+settlement_lines,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+settlement_lines,event,settlement_id,uuid,False,False,settlements,,,settlement_id
+settlement_lines,event,referrer_membership_id,uuid,False,False,memberships,,,referrer_membership_id
+settlement_lines,event,reward_rule_id,uuid,False,False,reward_rules,,,reward_rule_id
+settlement_lines,event,admission_event_id,uuid,True,False,admission_events,,,admission_event_id
+settlement_lines,event,sales_line_id,uuid,True,False,sales_lines,,,sales_line_id
+settlement_lines,event,amount_minor,bigint,False,False,,,,amount_minor
+settlement_lines,event,currency,char(3),False,False,,,,currency
+settlement_lines,event,calculation,jsonb,False,False,,,,基準数・単価／率・丸め・規則版
+settlement_lines,event,source_key,text,False,False,,,,source_key
+settlement_lines,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+reward_adjustments,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+reward_adjustments,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+reward_adjustments,event,store_id,uuid,False,False,stores,,,店舗境界
+reward_adjustments,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+reward_adjustments,event,settlement_line_id,uuid,False,False,settlement_lines,,,settlement_line_id
+reward_adjustments,event,amount_minor,bigint,False,False,,,amount_minor<>0,amount_minor
+reward_adjustments,event,reason,text,False,False,,,,reason
+reward_adjustments,event,created_by,uuid,False,False,memberships,,,created_by
+reward_adjustments,event,operation_id,uuid,False,False,,,,operation_id
+reward_adjustments,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+reward_disputes,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+reward_disputes,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+reward_disputes,event,store_id,uuid,False,False,stores,,,店舗境界
+reward_disputes,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+reward_disputes,event,settlement_line_id,uuid,False,False,settlement_lines,,,settlement_line_id
+reward_disputes,event,raised_by,uuid,False,False,memberships,,,raised_by
+reward_disputes,event,reason,text,False,False,,,,reason
+reward_disputes,event,status,text,False,False,,'OPEN',"status IN ('OPEN', 'RESOLVED', 'REJECTED')",status
+reward_disputes,event,resolution,text,True,False,,,,resolution
+reward_disputes,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+reward_disputes,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+reward_disputes,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+settlement_payments,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+settlement_payments,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+settlement_payments,event,store_id,uuid,False,False,stores,,,店舗境界
+settlement_payments,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+settlement_payments,event,settlement_id,uuid,False,False,settlements,,,settlement_id
+settlement_payments,event,referrer_membership_id,uuid,False,False,memberships,,,referrer_membership_id
+settlement_payments,event,amount_minor,bigint,False,False,,,amount_minor>0,amount_minor
+settlement_payments,event,currency,char(3),False,False,,,,currency
+settlement_payments,event,external_reference,text,False,False,,,,external_reference
+settlement_payments,event,recorded_by,uuid,False,False,memberships,,,recorded_by
+settlement_payments,event,paid_at,timestamptz,False,False,,,,paid_at
+settlement_payments,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+cash_sessions,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+cash_sessions,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+cash_sessions,event,store_id,uuid,False,False,stores,,,店舗境界
+cash_sessions,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+cash_sessions,event,operator_session_id,uuid,False,False,operator_sessions,,,operator_session_id
+cash_sessions,event,opening_minor,bigint,False,False,,,opening_minor>=0,opening_minor
+cash_sessions,event,counted_minor,bigint,True,False,,,counted_minor IS NULL OR counted_minor>=0,counted_minor
+cash_sessions,event,closed_at,timestamptz,True,False,,,,closed_at
+cash_sessions,event,difference_note,text,True,False,,,,difference_note
+cash_sessions,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+cash_sessions,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+cash_sessions,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+command_receipts,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+command_receipts,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+command_receipts,store,store_id,uuid,False,False,stores,,,店舗境界
+command_receipts,store,actor_key,text,False,False,,,,認証由来の個人／公開セッション／workerのキー
+command_receipts,store,operation_key,text,False,False,,,,operation_key
+command_receipts,store,operation_name,text,False,False,,,,operation_name
+command_receipts,store,request_hash,text,False,False,,,,request_hash
+command_receipts,store,status,text,False,False,,,"status IN ('PROCESSING', 'SUCCEEDED', 'REJECTED')",status
+command_receipts,store,http_status,integer,True,False,,,,http_status
+command_receipts,store,response_body,jsonb,True,False,,,,response_body
+command_receipts,store,expires_at,timestamptz,False,False,,,,expires_at
+command_receipts,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+command_receipts,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+command_receipts,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+event_stream_heads,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+event_stream_heads,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+event_stream_heads,event,store_id,uuid,False,False,stores,,,店舗境界
+event_stream_heads,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+event_stream_heads,event,last_seq,bigint,False,False,,0,last_seq>=0,last_seq
+event_stream_heads,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+event_stream_heads,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+event_stream_heads,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+outbox_events,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+outbox_events,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+outbox_events,event,store_id,uuid,False,False,stores,,,店舗境界
+outbox_events,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+outbox_events,event,stream_seq,bigint,False,False,,,stream_seq>0,stream_seq
+outbox_events,event,event_type,text,False,False,,,,event_type
+outbox_events,event,aggregate_type,text,False,False,,,,aggregate_type
+outbox_events,event,aggregate_id,uuid,False,False,,,,aggregate_id
+outbox_events,event,aggregate_version,integer,False,False,,,aggregate_version>0,aggregate_version
+outbox_events,event,payload,jsonb,False,False,,,,内部最小イベント。公開は権限別に射影
+outbox_events,event,trace_id,uuid,False,False,,,,trace_id
+outbox_events,event,published_at,timestamptz,True,False,,,,published_at
+outbox_events,event,attempts,integer,False,False,,0,attempts>=0,attempts
+outbox_events,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+outbox_events,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+outbox_events,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+sync_acks,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+sync_acks,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+sync_acks,event,store_id,uuid,False,False,stores,,,店舗境界
+sync_acks,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+sync_acks,event,device_id,uuid,False,False,devices,,,device_id
+sync_acks,event,operator_session_id,uuid,False,False,operator_sessions,,,operator_session_id
+sync_acks,event,applied_seq,bigint,False,False,,,applied_seq>=0,applied_seq
+sync_acks,event,snapshot_token_hash,text,False,False,,,,snapshot_token_hash
+sync_acks,event,last_seen_at,timestamptz,False,False,,,,last_seen_at
+sync_acks,event,visibility,text,False,False,,,"visibility IN ('FOREGROUND', 'BACKGROUND')",visibility
+sync_acks,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+sync_acks,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+sync_acks,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+notification_templates,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+notification_templates,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+notification_templates,store,store_id,uuid,False,False,stores,,,店舗境界
+notification_templates,store,template_key,text,False,False,,,,template_key
+notification_templates,store,locale,text,False,False,,,,locale
+notification_templates,store,version,integer,False,False,,,version>0,version
+notification_templates,store,body,text,False,False,,,,body
+notification_templates,store,status,text,False,False,,'DRAFT',"status IN ('DRAFT', 'ACTIVE', 'ARCHIVED')",status
+notification_templates,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+notification_templates,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+notification_jobs,event,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+notification_jobs,event,tenant_id,uuid,False,False,tenants,,,テナント境界
+notification_jobs,event,store_id,uuid,False,False,stores,,,店舗境界
+notification_jobs,event,event_id,uuid,False,False,events,,,日付跨ぎを含む営業ID
+notification_jobs,event,outbox_event_id,uuid,True,False,outbox_events,,,outbox_event_id
+notification_jobs,event,recipient_membership_id,uuid,True,False,memberships,,,recipient_membership_id
+notification_jobs,event,recipient_customer_id,uuid,True,False,customers,,,recipient_customer_id
+notification_jobs,event,channel,text,False,False,,,"channel IN ('IN_APP', 'PUSH', 'EMAIL', 'LINE', 'SMS')",channel
+notification_jobs,event,dedup_key,text,False,False,,,,dedup_key
+notification_jobs,event,status,text,False,False,,'QUEUED',"status IN ('QUEUED', 'SENT', 'FAILED', 'SUPPRESSED')",status
+notification_jobs,event,scheduled_at,timestamptz,False,False,,,,scheduled_at
+notification_jobs,event,attempts,integer,False,False,,0,attempts>=0,attempts
+notification_jobs,event,provider_reference,text,True,False,,,,provider_reference
+notification_jobs,event,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+notification_jobs,event,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+notification_jobs,event,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+integration_events,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+integration_events,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+integration_events,store,store_id,uuid,False,False,stores,,,店舗境界
+integration_events,store,provider,text,False,False,,,,provider
+integration_events,store,provider_account,text,False,False,,,,provider_account
+integration_events,store,external_event_id,text,False,False,,,,external_event_id
+integration_events,store,payload_hash,text,False,False,,,,payload_hash
+integration_events,store,payload,jsonb,False,False,,,,payload
+integration_events,store,status,text,False,False,,'RECEIVED',"status IN ('RECEIVED', 'PROCESSING', 'PROCESSED', 'FAILED', 'IGNORED')",status
+integration_events,store,attempts,integer,False,False,,0,attempts>=0,attempts
+integration_events,store,error_code,text,True,False,,,,error_code
+integration_events,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+integration_events,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+integration_events,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+audit_logs,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+audit_logs,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+audit_logs,store,store_id,uuid,False,False,stores,,,店舗境界
+audit_logs,store,actor_membership_id,uuid,True,False,memberships,,,actor_membership_id
+audit_logs,store,device_id,uuid,True,False,devices,,,device_id
+audit_logs,store,operator_session_id,uuid,True,False,operator_sessions,,,operator_session_id
+audit_logs,store,action,text,False,False,,,,action
+audit_logs,store,target_type,text,False,False,,,,target_type
+audit_logs,store,target_id,uuid,False,False,,,,target_id
+audit_logs,store,before_version,integer,True,False,,,,before_version
+audit_logs,store,after_version,integer,True,False,,,,after_version
+audit_logs,store,changes,jsonb,False,False,,,,必要な差分のみ。秘密・PIN・外部トークンを含めない
+audit_logs,store,reason,text,True,False,,,,reason
+audit_logs,store,trace_id,uuid,False,False,,,,trace_id
+audit_logs,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+export_jobs,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+export_jobs,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+export_jobs,store,store_id,uuid,False,False,stores,,,店舗境界
+export_jobs,store,requested_by,uuid,False,False,memberships,,,requested_by
+export_jobs,store,report_kind,text,False,False,,,,report_kind
+export_jobs,store,filters,jsonb,False,False,,,,filters
+export_jobs,store,format,text,False,False,,,"format IN ('CSV', 'XLSX', 'PDF')",format
+export_jobs,store,status,text,False,False,,'QUEUED',"status IN ('QUEUED', 'RUNNING', 'READY', 'FAILED', 'EXPIRED')",status
+export_jobs,store,object_key,text,True,False,,,,object_key
+export_jobs,store,expires_at,timestamptz,True,False,,,,expires_at
+export_jobs,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+export_jobs,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+export_jobs,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定
+import_jobs,store,id,uuid,False,True,,gen_random_uuid(),,内部識別子。表示名とは独立
+import_jobs,store,tenant_id,uuid,False,False,tenants,,,テナント境界
+import_jobs,store,store_id,uuid,False,False,stores,,,店舗境界
+import_jobs,store,requested_by,uuid,False,False,memberships,,,requested_by
+import_jobs,store,source_system,text,False,False,,,,source_system
+import_jobs,store,file_hash,text,False,False,,,,file_hash
+import_jobs,store,status,text,False,False,,'UPLOADED',"status IN ('UPLOADED', 'VALIDATED', 'APPLYING', 'COMPLETED', 'FAILED')",status
+import_jobs,store,mapping,jsonb,False,False,,,,mapping
+import_jobs,store,validation_errors,jsonb,False,False,,,,validation_errors
+import_jobs,store,operation_id,uuid,False,False,,,,operation_id
+import_jobs,store,version,integer,False,False,,1,version > 0,楽観ロック用の更新版
+import_jobs,store,created_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,サーバー作成時刻
+import_jobs,store,updated_at,timestamptz,False,False,,CURRENT_TIMESTAMP,,更新時刻。更新処理が明示設定

@@ -1,0 +1,15 @@
+stateDiagram-v2
+    [*] --> DRAFT
+    DRAFT --> PENDING: 承認が必要な申請を送信
+    PENDING --> APPROVED: 指定者または入口が最初に有効承認
+    PENDING --> REJECTED: 最初の有効な却下
+    PENDING --> RETURNED: 最初の有効な差戻し
+    RETURNED --> NEW_REVISION: 修正して新しい申請版
+    NEW_REVISION --> PENDING
+    APPROVED --> [*]
+    REJECTED --> [*]
+    note right of APPROVED
+        承認版は上書きしない
+        入場は別の台帳
+        取消は受付条件の状態で管理
+    end note

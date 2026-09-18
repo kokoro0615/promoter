@@ -1,0 +1,84 @@
+erDiagram
+    %% v4 R1 physical reference. Composite tenant/store/event FKs are defined in model.json.
+    events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    customers {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text name_key
+        integer version
+    }
+    customer_aliases {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid customer_id FK
+        integer version
+    }
+    operating_templates {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        uuid created_by FK
+    }
+    policy_versions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        integer version
+        text status
+        uuid published_by FK "nullable"
+    }
+    price_rules {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid policy_version_id FK
+        bigint amount_minor
+        integer version
+    }
+    permits {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        uuid customer_id FK "nullable"
+        uuid actor_membership_id FK "nullable"
+        uuid granted_by FK
+        text status
+        uuid supersedes_id FK "nullable"
+    }
+    coupons {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        uuid owner_membership_id FK "nullable"
+        text status
+    }
+    memberships {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid user_id FK
+        text status
+        integer version
+    }
+    customers ||..o{ customer_aliases : customer_id
+    memberships ||..o{ operating_templates : created_by
+    memberships |o..o{ policy_versions : published_by
+    policy_versions ||..o{ price_rules : policy_version_id
+    customers |o..o{ permits : customer_id
+    memberships |o..o{ permits : actor_membership_id
+    memberships ||..o{ permits : granted_by
+    permits |o..o{ permits : supersedes_id
+    memberships |o..o{ coupons : owner_membership_id

@@ -1,0 +1,190 @@
+[
+  {
+    "id": "T01",
+    "title": "Mermaid ER diagram",
+    "url": "https://mermaid.js.org/syntax/entityRelationshipDiagram.html",
+    "fact": "ER関係・多重度・属性・PK/FK表記が定義される。",
+    "inference": "ERを.mmdで提供。NOT NULL・複合参照の強制はDB辞書とDDLで補足。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T02",
+    "title": "OpenAPI 3.1.1",
+    "url": "https://spec.openapis.org/oas/v3.1.1.html",
+    "fact": "HTTP APIを機械可読で記述する仕様。",
+    "inference": "互換性重視で3.1.1を選ぶ設計案。最新版と称さない。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T03",
+    "title": "PostgreSQL Row Security",
+    "url": "https://www.postgresql.org/docs/current/ddl-rowsecurity.html",
+    "fact": "RLSの有効化、既定拒否、所有者・BYPASSRLSなどの例外がある。",
+    "inference": "RLS＋API認可＋限定DBロール。参照DDLの既定拒否だけで本番可とはしない。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T04",
+    "title": "PostgreSQL Explicit Locking",
+    "url": "https://www.postgresql.org/docs/current/explicit-locking.html",
+    "fact": "行ロックと競合・デッドロックの挙動を説明する。",
+    "inference": "人数・枠・申請を短い取引で検証し、ロック順を統一する。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T05",
+    "title": "PostgreSQL Transaction Isolation",
+    "url": "https://www.postgresql.org/docs/current/transaction-iso.html",
+    "fact": "分離レベルと、sequenceが通常の取引ロールバックと異なることを説明。",
+    "inference": "単なるBIGSERIAL最大値を安全な同期カーソルとしない。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T06",
+    "title": "OWASP Session Management",
+    "url": "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
+    "fact": "セッション保護・失効・更新・タイムアウトを扱う。",
+    "inference": "端末と担当者を別セッションにし、背景化と交代でロックする。時間値は自社提案。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T07",
+    "title": "OWASP Authorization",
+    "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html",
+    "fact": "最小権限・既定拒否・各要求での認可が重要。",
+    "inference": "画面の役職表示でなく、有効所属・営業役割・対象行を毎回検証。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T08",
+    "title": "OWASP Password Storage",
+    "url": "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html",
+    "fact": "パスワードの安全なハッシュ保存とpepper分離を説明。",
+    "inference": "PINにもサーバー側のハッシュ・試行制限を適用。短いPIN単独は外部認証に使わない。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T09",
+    "title": "LINE Web Login",
+    "url": "https://developers.line.biz/ja/docs/line-login/integrate-line-login/",
+    "fact": "Web認可コードフロー、state・nonce・PKCEの仕様を掲載。",
+    "inference": "個人PWAはLINE認証＋独自所属。共用端末に個人LINEのSSOを残さない。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T10",
+    "title": "WebKit Web Push",
+    "url": "https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/",
+    "fact": "iOS/iPadOSのホーム画面Webアプリと通知許可について説明。",
+    "inference": "PWA通知は補助。名前検索と一覧更新を通知既読に依存させない。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T11",
+    "title": "web.dev PWA installation",
+    "url": "https://web.dev/learn/pwa/installation",
+    "fact": "PWAのインストール方法がブラウザ・OSで異なる。",
+    "inference": "入口端末と個人端末それぞれで追加・起動・復帰を実機試験。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T12",
+    "title": "Stripe webhooks",
+    "url": "https://docs.stripe.com/webhooks",
+    "fact": "署名検証、再配送、重複、イベント順序について説明。",
+    "inference": "PSPアダプターは真正性、受領ID、再照会で照合。Stripe採用決定を意味しない。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T13",
+    "title": "Stripe idempotency",
+    "url": "https://docs.stripe.com/api/idempotent_requests",
+    "fact": "冪等キーによる同一要求の再試行を提供する。",
+    "inference": "内部の業務冪等キーとPSP側キーを関連付け、保持期限の違いを考慮。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T14",
+    "title": "AWS transactional outbox",
+    "url": "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html",
+    "fact": "DB更新とメッセージ送信の二重書込不整合を扱うパターン。",
+    "inference": "Outboxを同じDB取引で保存し、配送の重複を受信側で処理。AWS採用を意味しない。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T15",
+    "title": "Unicode UAX 15",
+    "url": "https://www.unicode.org/reports/tr15/",
+    "fact": "Unicode正規化形式を定義。互換正規化は原文を変える。",
+    "inference": "原文と検索キーを分離。読みや人物同一性の推定とは区別。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T16",
+    "title": "PostgreSQL Constraints",
+    "url": "https://www.postgresql.org/docs/current/ddl-constraints.html",
+    "fact": "CHECK・UNIQUE・FK・排他制約等と適用範囲を説明。",
+    "inference": "tenant/store/eventの複合FKと業務取引を併用。複数行合計を単純CHECKで済ませない。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T17",
+    "title": "PostgreSQL Range Types",
+    "url": "https://www.postgresql.org/docs/current/rangetypes.html",
+    "fact": "時刻範囲と排他制約で重複範囲を制御できる。",
+    "inference": "VIP物理テーブルを営業を跨いでも二重予約しない。[start,end)を採用。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T18",
+    "title": "MDN IndexedDB",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB",
+    "fact": "ブラウザ内のデータベースとトランザクション利用を説明。",
+    "inference": "当日最小スナップショットと暫定操作を分離。永続保存・遠隔削除の保証とはしない。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T19",
+    "title": "RFC 9457",
+    "url": "https://www.rfc-editor.org/rfc/rfc9457.html",
+    "fact": "HTTP APIの機械可読なProblem Detailsを定義。",
+    "inference": "application/problem+jsonと独自code・trace_idで現場復旧に結び付ける。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T20",
+    "title": "JSON Schema 2020-12",
+    "url": "https://json-schema.org/draft/2020-12/json-schema-core",
+    "fact": "JSON文書の構造を記述・検証する枠組みを定義。",
+    "inference": "型と必須・enumをSchema化。時刻順・他店舗ID・枠合計は別検証。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "T21",
+    "title": "OWASP Authentication",
+    "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+    "fact": "認証、追加認証、試行制限などのガイダンス。",
+    "inference": "端末登録・権限拡張・返金・締めは本人管理セッションで追加認証。",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "C01",
+    "url": "https://hundred.jp/2026/07/28/services-update-app-ai/",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "C02",
+    "url": "https://clubble-booking.com/ja/",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "C03",
+    "url": "https://vemos.io/venue-management",
+    "checked_at": "2026-09-15"
+  },
+  {
+    "id": "C04",
+    "url": "https://guestaccess.nl/",
+    "checked_at": "2026-09-15"
+  }
+]

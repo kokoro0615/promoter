@@ -1,0 +1,23 @@
+sequenceDiagram
+    actor Manager as 店舗管理者
+    participant Device as 店舗共用PWA
+    participant API as 認証API
+    participant DB as セッションDB
+    actor Staff as 入口担当者
+    Manager->>API: 追加認証して端末招待
+    API->>DB: 短期・単回コードのハッシュ保存
+    API-->>Manager: ペアリングコード
+    Manager->>Device: コード入力
+    Device->>API: コードを消費
+    API->>DB: 店舗に固定したdevice_session作成
+    API-->>Device: HttpOnly device cookie
+    Note over Device,API: 端末cookieだけでは顧客一覧・承認にアクセス不可
+    Staff->>Device: 担当者選択・個人PIN
+    Device->>API: 営業ID・所属ID・PIN
+    API->>DB: 所属・当日権限・PIN制限を確認
+    API->>DB: 旧operator失効・epoch加算・新operator作成
+    API-->>Device: operator cookie・context ID
+    Device->>API: 業務操作とX-Operator-Context
+    API->>DB: 現在operator・端末・営業・権限を照合
+    API-->>Device: 個人に帰属する操作結果
+    Note over Device,DB: 交代前タブ・期限切れ・端末停止は拒否。PIN平文は保存しない

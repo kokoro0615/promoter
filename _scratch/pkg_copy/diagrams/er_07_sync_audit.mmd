@@ -1,0 +1,115 @@
+erDiagram
+    %% v4 R1 physical reference. Composite tenant/store/event FKs are defined in model.json.
+    command_receipts {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    event_stream_heads {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        integer version
+    }
+    outbox_events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        bigint stream_seq
+        integer version
+    }
+    sync_acks {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid device_id FK
+        uuid operator_session_id FK
+        integer version
+    }
+    notification_templates {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        text status
+    }
+    notification_jobs {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid outbox_event_id FK "nullable"
+        uuid recipient_membership_id FK "nullable"
+        uuid recipient_customer_id FK "nullable"
+        text status
+        integer version
+    }
+    integration_events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    audit_logs {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid actor_membership_id FK "nullable"
+        uuid device_id FK "nullable"
+        uuid operator_session_id FK "nullable"
+    }
+    export_jobs {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid requested_by FK
+        text status
+        integer version
+    }
+    import_jobs {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid requested_by FK
+        text status
+        integer version
+    }
+    events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    devices {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        uuid enrolled_by FK
+        bigint operator_epoch
+        integer version
+    }
+    operator_sessions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid device_id FK
+        uuid device_session_id FK
+        uuid membership_id FK
+        bigint operator_epoch
+        integer version
+    }
+    devices ||..o{ sync_acks : device_id
+    operator_sessions ||..o{ sync_acks : operator_session_id
+    outbox_events |o..o{ notification_jobs : outbox_event_id
+    devices |o..o{ audit_logs : device_id
+    operator_sessions |o..o{ audit_logs : operator_session_id
+    devices ||..o{ operator_sessions : device_id

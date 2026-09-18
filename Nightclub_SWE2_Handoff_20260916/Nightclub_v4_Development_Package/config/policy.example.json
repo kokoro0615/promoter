@@ -1,0 +1,69 @@
+{
+  "schema_version": "4.0.0",
+  "environment": "EXAMPLE_ONLY",
+  "event_id": "00000000-0000-4000-8000-000000000101",
+  "timezone": "Asia/Tokyo",
+  "currency": "JPY",
+  "effective_from": "2026-09-18T22:00:00+09:00",
+  "effective_to": "2026-09-19T05:00:00+09:00",
+  "registration_from": "2026-09-18T10:00:00+09:00",
+  "registration_to": "2026-09-19T04:30:00+09:00",
+  "apply_mode": "NEW_ONLY",
+  "price_rules": [
+    {
+      "rule_key": "normal",
+      "label": "通常（テスト）",
+      "kind": "NORMAL",
+      "amount_minor": 3000,
+      "entry_from": "2026-09-18T22:00:00+09:00",
+      "entry_to": "2026-09-19T05:00:00+09:00",
+      "payment_required": true,
+      "standard_allowed": true
+    },
+    {
+      "rule_key": "guest_discount",
+      "label": "紹介割引（テスト）",
+      "kind": "DISCOUNT",
+      "amount_minor": 2000,
+      "entry_from": "2026-09-18T22:00:00+09:00",
+      "entry_to": "2026-09-19T05:00:00+09:00",
+      "payment_required": true,
+      "standard_allowed": true
+    },
+    {
+      "rule_key": "free",
+      "label": "フリー（テスト）",
+      "kind": "FREE",
+      "amount_minor": 0,
+      "entry_from": "2026-09-18T22:00:00+09:00",
+      "entry_to": "2026-09-19T05:00:00+09:00",
+      "payment_required": false,
+      "standard_allowed": false
+    }
+  ],
+  "event_free_limit": {
+    "mode": "LIMITED",
+    "value": 30
+  },
+  "max_party_size": {
+    "mode": "LIMITED",
+    "value": 20
+  },
+  "approval": {
+    "designated_member_ids": [
+      "00000000-0000-4000-8000-000000000201",
+      "00000000-0000-4000-8000-000000000202",
+      "00000000-0000-4000-8000-000000000203"
+    ],
+    "entrance_regular_approval": true,
+    "self_approval_allowed": false,
+    "renotify_after_seconds": 60,
+    "escalate_after_seconds": 120
+  },
+  "default_companion_policy": "PRINCIPAL_ONLY",
+  "customer_match_methods": [
+    "KNOWN_BY_STAFF",
+    "BOOKING_CONTEXT"
+  ],
+  "limits_unset_block_publish": true
+}

@@ -1,0 +1,29 @@
+{
+  "subject_kind": "CUSTOMER",
+  "subject_id": "00000000-0000-4000-8000-000000000301",
+  "store_id": "00000000-0000-4000-8000-000000000001",
+  "event_ids": [
+    "00000000-0000-4000-8000-000000000101"
+  ],
+  "allowed_rule_keys": [
+    "free"
+  ],
+  "valid_from": "2026-09-18T22:00:00+09:00",
+  "valid_to": "2026-09-19T05:00:00+09:00",
+  "party_limit": {
+    "mode": "LIMITED",
+    "value": 1
+  },
+  "event_limit": {
+    "mode": "LIMITED",
+    "value": 1
+  },
+  "companion_limit": {
+    "mode": "LIMITED",
+    "value": 0
+  },
+  "principal_presence_required": true,
+  "proxy_registration_allowed": false,
+  "proxy_referrer_ids": [],
+  "reason": "テスト専用・常連本人1名。店舗の実設定ではない。"
+}

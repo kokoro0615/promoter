@@ -1,0 +1,219 @@
+erDiagram
+    %% v4 R1 physical reference. Composite tenant/store/event FKs are defined in model.json.
+    invitation_links {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid referrer_membership_id FK
+        text status
+        integer version
+    }
+    visits {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid customer_id FK "nullable"
+        uuid referrer_membership_id FK "nullable"
+        uuid created_by FK "nullable"
+        text name_key
+        integer planned_count
+        text status
+        integer version
+    }
+    visit_members {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid customer_id FK "nullable"
+        integer version
+    }
+    customer_checks {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid customer_id FK
+        uuid checked_by FK
+        uuid operator_session_id FK "nullable"
+    }
+    admission_segments {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid price_rule_id FK
+        uuid permit_id FK "nullable"
+        uuid required_customer_id FK "nullable"
+        text status
+        text authorization_method "nullable"
+        integer version
+    }
+    approval_requests {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid segment_id FK
+        uuid requested_by FK
+        text status
+        integer version
+    }
+    approval_decisions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid request_id FK
+        uuid decided_by FK
+        uuid operator_session_id FK "nullable"
+    }
+    quota_buckets {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        integer version
+    }
+    quota_allocations {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid bucket_id FK
+        uuid segment_id FK
+        integer version
+    }
+    entry_passes {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid member_id FK "nullable"
+        integer version
+    }
+    admission_events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid visit_id FK
+        uuid segment_id FK
+        uuid pass_id FK "nullable"
+        uuid operator_session_id FK
+        uuid actor_membership_id FK
+        uuid customer_check_id FK "nullable"
+        uuid corrects_id FK "nullable"
+    }
+    provisional_entries {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid device_id FK
+        uuid actor_membership_id FK
+        uuid visit_id FK "nullable"
+        text status
+        uuid reconciled_entry_id FK "nullable"
+        integer version
+    }
+    events {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text status
+        integer version
+    }
+    customers {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text name_key
+        integer version
+    }
+    memberships {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid user_id FK
+        text status
+        integer version
+    }
+    operator_sessions {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid device_id FK
+        uuid device_session_id FK
+        uuid membership_id FK
+        bigint operator_epoch
+        integer version
+    }
+    price_rules {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid event_id FK
+        uuid policy_version_id FK
+        bigint amount_minor
+        integer version
+    }
+    permits {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        integer version
+        uuid customer_id FK "nullable"
+        uuid actor_membership_id FK "nullable"
+        uuid granted_by FK
+        text status
+        uuid supersedes_id FK "nullable"
+    }
+    memberships ||..o{ invitation_links : referrer_membership_id
+    customers |o..o{ visits : customer_id
+    memberships |o..o{ visits : referrer_membership_id
+    memberships |o..o{ visits : created_by
+    visits ||..o{ visit_members : visit_id
+    customers |o..o{ visit_members : customer_id
+    visits ||..o{ customer_checks : visit_id
+    customers ||..o{ customer_checks : customer_id
+    memberships ||..o{ customer_checks : checked_by
+    operator_sessions |o..o{ customer_checks : operator_session_id
+    visits ||..o{ admission_segments : visit_id
+    price_rules ||..o{ admission_segments : price_rule_id
+    permits |o..o{ admission_segments : permit_id
+    customers |o..o{ admission_segments : required_customer_id
+    admission_segments ||..o{ approval_requests : segment_id
+    memberships ||..o{ approval_requests : requested_by
+    approval_requests ||..o{ approval_decisions : request_id
+    memberships ||..o{ approval_decisions : decided_by
+    operator_sessions |o..o{ approval_decisions : operator_session_id
+    quota_buckets ||..o{ quota_allocations : bucket_id
+    admission_segments ||..o{ quota_allocations : segment_id
+    visits ||..o{ entry_passes : visit_id
+    visit_members |o..o{ entry_passes : member_id
+    visits ||..o{ admission_events : visit_id
+    admission_segments ||..o{ admission_events : segment_id
+    entry_passes |o..o{ admission_events : pass_id
+    operator_sessions ||..o{ admission_events : operator_session_id
+    memberships ||..o{ admission_events : actor_membership_id
+    customer_checks |o..o{ admission_events : customer_check_id
+    admission_events |o..o{ admission_events : corrects_id
+    admission_segments |o..o{ admission_events : same_visit_segment_id
+    entry_passes |o..o{ admission_events : same_visit_pass_id
+    customer_checks |o..o{ admission_events : same_visit_customer_check_id
+    memberships ||..o{ provisional_entries : actor_membership_id
+    visits |o..o{ provisional_entries : visit_id
+    admission_events |o..o{ provisional_entries : reconciled_entry_id
+    memberships ||..o{ operator_sessions : membership_id
+    customers |o..o{ permits : customer_id
+    memberships |o..o{ permits : actor_membership_id
+    memberships ||..o{ permits : granted_by
+    permits |o..o{ permits : supersedes_id

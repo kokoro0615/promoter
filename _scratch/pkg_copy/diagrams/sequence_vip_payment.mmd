@@ -1,0 +1,21 @@
+sequenceDiagram
+    actor Guest as お客様
+    participant API as 予約API
+    participant DB as 予約・金銭DB
+    participant PSP as 決済事業者
+    Guest->>API: テーブル・時間・人数を選択
+    API->>DB: 物理テーブル時間帯を排他引当
+    API->>PSP: 店舗・金額・通貨・予約を固定して決済開始
+    PSP-->>Guest: 決済画面
+    PSP->>API: 署名付きWebhook
+    API->>DB: 外部イベントIDを一意受領
+    API->>PSP: 必要時、最新取引を照会
+    API->>DB: 入金を記録し在庫・承認条件を確認
+    alt 在庫有効かつ予約承認条件を満たす
+        API->>DB: 予約確定・Outbox保存
+        API-->>Guest: 予約確定の案内
+    else 押さえ失効または予約承認待ち
+        API->>DB: 支払済み未確定・例外キュー
+        Note over API,DB: 他人の予約を追い出さない。対応と返金を記録
+    end
+    Note over Guest,DB: ブラウザ成功画面だけで支払済みにしない

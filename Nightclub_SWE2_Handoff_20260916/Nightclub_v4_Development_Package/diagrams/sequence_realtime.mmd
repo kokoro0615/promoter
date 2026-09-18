@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant Gate as 入口PWA
+    participant API as 認可API
+    participant DB as 正式DB
+    participant Worker as Outbox配信
+    Gate->>API: 営業スナップショット要求
+    API->>DB: 一貫した一覧とstream headを取得
+    API-->>Gate: snapshot token・一覧・cursor
+    Note over API,DB: ページ分割も同一スナップショット。期限切れならやり直し
+    DB-->>Worker: COMMIT済みOutbox
+    Worker-->>Gate: 権限内の変更通知
+    Gate->>API: cursor以降の変更取得
+    API->>DB: コミット順の営業ストリームを照会
+    API-->>Gate: 権限で射影した変更とnext cursor
+    Gate->>Gate: 重複・逆順を防いで画面データへ適用
+    Gate->>API: 適用済みcursorのACK
+    Note over Gate,API: ACKは人の既読ではない
+    Gate->>API: 復帰・再接続時に差分取得
+    alt カーソル期限切れ
+        API-->>Gate: 410 SNAPSHOT_REQUIRED
+        Gate->>API: 新しいスナップショット
+    else 継続可能
+        API-->>Gate: 取りこぼした変更
+    end

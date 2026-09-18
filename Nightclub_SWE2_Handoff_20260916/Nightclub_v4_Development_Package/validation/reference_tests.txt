@@ -1,0 +1,18 @@
+test_deposit_not_sales (__main__.ReferenceChecks.test_deposit_not_sales) ... ok
+test_explicit_unlimited (__main__.ReferenceChecks.test_explicit_unlimited) ... ok
+test_kana (__main__.ReferenceChecks.test_kana) ... ok
+test_limited_boundary (__main__.ReferenceChecks.test_limited_boundary) ... ok
+test_limited_over (__main__.ReferenceChecks.test_limited_over) ... ok
+test_names_are_not_identity (__main__.ReferenceChecks.test_names_are_not_identity) ... ok
+test_negative (__main__.ReferenceChecks.test_negative) ... ok
+test_not_kanji_inference (__main__.ReferenceChecks.test_not_kanji_inference) ... ok
+test_referrer_not_approver (__main__.ReferenceChecks.test_referrer_not_approver) ... ok
+test_reward_example (__main__.ReferenceChecks.test_reward_example) ... ok
+test_time_half_open (__main__.ReferenceChecks.test_time_half_open) ... ok
+test_unset (__main__.ReferenceChecks.test_unset) ... ok
+test_width (__main__.ReferenceChecks.test_width) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.000s
+
+OK
