@@ -1,0 +1,6622 @@
+openapi: 3.1.1
+info:
+  title: Nightclub v4 R1 Core API Design
+  version: 4.0.0
+  description: 開発用コア契約。未実装。ユーザー確定：名前検索中心、入口も通常承認、入口共用端末。R1全機能の詳細化状況はapi/coverage.mdを参照。実サービスURL・認証基盤・PSPは未確定。
+servers:
+- url: https://api.example.invalid/v1
+  description: 非実在の例示URL。実接続先ではない。
+security: &id001
+- PersonalSession: []
+- DeviceSession: []
+  OperatorSession: []
+paths:
+  /auth/line/start:
+    get:
+      operationId: startLineLogin
+      tags:
+      - Core
+      summary: 個人LINEログイン開始
+      description: 'state・nonce・PKCE S256を生成。callbackは選定認証基盤の認証設計で別管理。
+
+
+        権限：public。公開経路でもレート制限・適用範囲・冪等性をサーバーで検証。'
+      security: []
+      x-permission: public
+      x-requirement-ids:
+      - V3-ID-02
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginStart'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+  /me:
+    get:
+      operationId: getMe
+      tags:
+      - Core
+      summary: 現在の主体と権限
+      description: '
+
+
+        権限：session.read。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: session.read
+      x-requirement-ids:
+      - V3-ID-01
+      - V4-KSK-03
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorContext'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - $ref: '#/components/parameters/OperatorContext'
+  /auth/logout:
+    post:
+      operationId: logout
+      tags:
+      - Core
+      summary: セッション失効
+      description: '
+
+
+        権限：session.end。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: session.end
+      x-requirement-ids:
+      - V3-ID-06
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ack'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/devices/enrollments:
+    post:
+      operationId: createEnrollment
+      tags:
+      - Identity
+      summary: 共用端末を招待
+      description: '
+
+
+        権限：device.enroll。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: device.enroll
+      x-requirement-ids:
+      - V4-KSK-01
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: &id003
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentCreate'
+  /device/enroll:
+    post:
+      operationId: consumeEnrollment
+      tags:
+      - Identity
+      summary: 短期コードで端末資格情報を発行
+      description: 'コードの当て推量防止とCSRF/Origin検証を行う。業務権限はまだ付与しない。
+
+
+        権限：pairing.code。公開経路でもレート制限・適用範囲・冪等性をサーバーで検証。'
+      security: []
+      x-permission: pairing.code
+      x-requirement-ids:
+      - V4-KSK-01
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ack'
+          headers:
+            Set-Cookie:
+              description: Secure; HttpOnly; SameSite属性付きのサーバーセッション。値はレスポンス本文に返さない。
+              schema: &id002
+                type: string
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentConsume'
+  /device/operators:
+    get:
+      operationId: listDeviceOperators
+      tags:
+      - Identity
+      summary: 当日担当者の最小候補
+      description: '
+
+
+        権限：device.unlock。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security:
+      - DeviceSession: []
+      x-permission: device.unlock
+      x-requirement-ids:
+      - V4-KSK-02
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipSummaryPage'
+          headers:
+            Set-Cookie:
+              description: Secure; HttpOnly; SameSite属性付きのサーバーセッション。値はレスポンス本文に返さない。
+              schema: *id002
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: event_id
+        in: query
+        required: true
+        schema: *id003
+        description: 当該店舗の営業
+      - $ref: '#/components/parameters/OperatorContext'
+  /device/operator-sessions:
+    post:
+      operationId: unlockOperator
+      tags:
+      - Identity
+      summary: 担当者選択と個人PINで解錠
+      description: '
+
+
+        権限：device.unlock。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security:
+      - DeviceSession: []
+      x-permission: device.unlock
+      x-requirement-ids:
+      - V4-KSK-02
+      - V4-KSK-05
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorResult'
+          headers:
+            Set-Cookie:
+              description: Secure; HttpOnly; SameSite属性付きのサーバーセッション。値はレスポンス本文に返さない。
+              schema: *id002
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorUnlock'
+  /device/lock:
+    post:
+      operationId: lockOperator
+      tags:
+      - Identity
+      summary: 現在担当者をロック
+      description: '
+
+
+        権限：session.lock。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: session.lock
+      x-requirement-ids:
+      - V4-KSK-06
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ack'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/devices:
+    get:
+      operationId: listDevices
+      tags:
+      - Identity
+      summary: 登録端末・担当・接続状態
+      description: '
+
+
+        権限：device.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: device.manage
+      x-requirement-ids:
+      - V4-KSK-04
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceSummaryPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/devices/{deviceId}/revoke:
+    post:
+      operationId: revokeDevice
+      tags:
+      - Identity
+      summary: 紛失端末を失効
+      description: '
+
+
+        権限：device.revoke。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: device.revoke
+      x-requirement-ids:
+      - V4-KSK-08
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: deviceId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonCommand'
+  /stores/{storeId}/memberships:
+    get:
+      operationId: listMemberships
+      tags:
+      - Admin
+      summary: 店舗所属一覧
+      description: '
+
+
+        権限：membership.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: membership.manage
+      x-requirement-ids: []
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipSummaryPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/invitations:
+    post:
+      operationId: inviteMember
+      tags:
+      - Admin
+      summary: 期限付き個人招待
+      description: '
+
+
+        権限：membership.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: membership.manage
+      x-requirement-ids:
+      - V3-ID-03
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteCreate'
+  /stores/{storeId}/memberships/{membershipId}/suspend:
+    post:
+      operationId: suspendMember
+      tags:
+      - Admin
+      summary: 所属と有効セッションを停止
+      description: '
+
+
+        権限：membership.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: membership.manage
+      x-requirement-ids:
+      - V3-ID-06
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: membershipId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonCommand'
+  /stores/{storeId}/roles/{roleId}:
+    put:
+      operationId: updateRole
+      tags:
+      - Admin
+      summary: 店舗ロール権限を更新
+      description: '
+
+
+        権限：role.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: role.manage
+      x-requirement-ids:
+      - V3-ID-09
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: roleId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleUpdate'
+  /stores/{storeId}/events:
+    get:
+      operationId: listEvents
+      tags:
+      - Admin
+      summary: 営業一覧
+      description: '
+
+
+        権限：event.read。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: event.read
+      x-requirement-ids: []
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventSummaryPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: cursor
+        in: query
+        required: false
+        schema: *id002
+        description: 権限・営業・フィルタに結び付けた不透明カーソル
+      - name: limit
+        in: query
+        required: false
+        schema: &id004
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+        description: 最大100
+      - $ref: '#/components/parameters/OperatorContext'
+    post:
+      operationId: createEvent
+      tags:
+      - Admin
+      summary: 営業を作成
+      description: '
+
+
+        権限：event.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: event.manage
+      x-requirement-ids: []
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventCreate'
+  /stores/{storeId}/events/{eventId}/assignments:
+    put:
+      operationId: updateAssignments
+      tags:
+      - Admin
+      summary: 当日の紹介者・承認者・入口担当
+      description: '
+
+
+        権限：event.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: event.manage
+      x-requirement-ids:
+      - V4-APR-03
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignmentsUpdate'
+  /stores/{storeId}/events/{eventId}/publish:
+    post:
+      operationId: publishEvent
+      tags:
+      - Admin
+      summary: 設定不足検証後に営業公開
+      description: '
+
+
+        権限：event.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: event.manage
+      x-requirement-ids:
+      - V4-CFG-10
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionCommand'
+  /stores/{storeId}/customers:
+    get:
+      operationId: searchCustomers
+      tags:
+      - Customer
+      summary: 名前中心の顧客候補検索
+      description: '
+
+
+        権限：customer.lookup。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: customer.lookup
+      x-requirement-ids:
+      - V4-CUS-01
+      - V4-CUS-05
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSummaryPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description: 入力中は候補。名前一致は本人確認ではない
+      - name: purpose
+        in: query
+        required: true
+        schema:
+          type: string
+          enum:
+          - REGISTER_VISIT
+          - ENTRANCE_MATCH
+          - ADMIN
+        description: 用途別射影
+      - name: event_id
+        in: query
+        required: false
+        schema: *id003
+        description: 受付・登録用途は必須（業務検証）
+      - name: cursor
+        in: query
+        required: false
+        schema: *id002
+        description: 権限・営業・フィルタに結び付けた不透明カーソル
+      - name: limit
+        in: query
+        required: false
+        schema: *id004
+        description: 最大100
+      - $ref: '#/components/parameters/OperatorContext'
+    post:
+      operationId: createCustomer
+      tags:
+      - Customer
+      summary: 必要な顧客台帳を作成
+      description: '
+
+
+        権限：customer.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: customer.manage
+      x-requirement-ids:
+      - V4-CUS-06
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerCreate'
+  /stores/{storeId}/customers/{customerId}:
+    patch:
+      operationId: updateCustomer
+      tags:
+      - Customer
+      summary: 顧客名・別名を更新
+      description: '
+
+
+        権限：customer.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: customer.manage
+      x-requirement-ids:
+      - V4-CUS-06
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: customerId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerUpdate'
+  /stores/{storeId}/customers/{customerId}/regular-designation:
+    post:
+      operationId: designateRegular
+      tags:
+      - Customer
+      summary: 常連指定・解除（許可とは別）
+      description: '
+
+
+        権限：customer.designate。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: customer.designate
+      x-requirement-ids:
+      - V4-CUS-01
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: customerId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegularDesignation'
+  /stores/{storeId}/permits:
+    post:
+      operationId: createPermit
+      tags:
+      - Policy
+      summary: 顧客本人または実登録者への事前許可
+      description: '
+
+
+        権限：permit.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: permit.manage
+      x-requirement-ids:
+      - V4-CFG-01
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PermitCreate'
+    get:
+      operationId: listPermits
+      tags:
+      - Policy
+      summary: 許可条件・対象・有効期間の管理一覧
+      description: '
+
+
+        権限：permit.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: permit.manage
+      x-requirement-ids:
+      - V4-CFG-01
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermitSummaryPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: cursor
+        in: query
+        required: false
+        schema: *id002
+        description: 権限・営業・フィルタに結び付けた不透明カーソル
+      - name: limit
+        in: query
+        required: false
+        schema: *id004
+        description: 最大100
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/permits/{permitId}/revoke:
+    post:
+      operationId: revokePermit
+      tags:
+      - Policy
+      summary: 許可取消と適用範囲の確認
+      description: '
+
+
+        権限：permit.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: permit.manage
+      x-requirement-ids:
+      - V4-CFG-06
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: permitId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PermitRevocation'
+  /stores/{storeId}/events/{eventId}/policy-versions:
+    post:
+      operationId: createPolicyVersion
+      tags:
+      - Policy
+      summary: 営業設定の下書き版を作成
+      description: '
+
+
+        権限：policy.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: policy.manage
+      x-requirement-ids:
+      - V4-CFG-05
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyCreate'
+  /stores/{storeId}/events/{eventId}/policy-versions/{policyId}/preview:
+    post:
+      operationId: previewPolicy
+      tags:
+      - Policy
+      summary: 設定検証・未入場影響の試算
+      description: '
+
+
+        権限：policy.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: policy.manage
+      x-requirement-ids:
+      - V4-CFG-05
+      - V4-CFG-06
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: policyId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyPreview'
+  /stores/{storeId}/events/{eventId}/policy-versions/{policyId}/publish:
+    post:
+      operationId: publishPolicy
+      tags:
+      - Policy
+      summary: 確認した版と範囲を公開
+      description: '
+
+
+        権限：policy.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: policy.manage
+      x-requirement-ids:
+      - V4-CFG-06
+      - V4-CFG-07
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: policyId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyPublish'
+  /stores/{storeId}/events/{eventId}/visits:
+    get:
+      operationId: searchVisits
+      tags:
+      - Admission
+      summary: 当日の名前・紹介者・状態で受付検索
+      description: '
+
+
+        権限：visit.read。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: visit.read
+      x-requirement-ids:
+      - V4-CUS-02
+      - V3-ENT-01
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisitSummaryPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description: 受付名・読み
+      - name: referrer_id
+        in: query
+        required: false
+        schema: *id003
+        description: 自分以外は権限検証
+      - name: status
+        in: query
+        required: false
+        schema: *id002
+        description: 状態で絞込
+      - name: cursor
+        in: query
+        required: false
+        schema: *id002
+        description: 権限・営業・フィルタに結び付けた不透明カーソル
+      - name: limit
+        in: query
+        required: false
+        schema: *id004
+        description: 最大100
+      - $ref: '#/components/parameters/OperatorContext'
+    post:
+      operationId: createVisit
+      tags:
+      - Admission
+      summary: ゲスト登録と条件・枠判定
+      description: 'planned_countとsegments count合計を照合。actor・created_by・価格・承認結果をサーバー算出。権限外の代理は403。
+
+
+        権限：visit.create。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: visit.create
+      x-requirement-ids:
+      - V3-REG-01
+      - V4-CFG-08
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisitSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VisitCreate'
+  /stores/{storeId}/events/{eventId}/visits/{visitId}:
+    get:
+      operationId: getVisit
+      tags:
+      - Admission
+      summary: 来店の最新詳細
+      description: '
+
+
+        権限：visit.read。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: visit.read
+      x-requirement-ids: []
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisitSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: visitId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/OperatorContext'
+    patch:
+      operationId: updateVisit
+      tags:
+      - Admission
+      summary: 受付名・到着状態を変更
+      description: '
+
+
+        権限：visit.edit。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: visit.edit
+      x-requirement-ids: []
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisitSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: visitId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VisitUpdate'
+  /stores/{storeId}/events/{eventId}/visits/{visitId}/segments:
+    post:
+      operationId: addSegments
+      tags:
+      - Admission
+      summary: 人数追加と追加分のみ判定
+      description: '
+
+
+        権限：visit.edit。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: visit.edit
+      x-requirement-ids:
+      - V3-POL-10
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisitSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: visitId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SegmentAdd'
+  /stores/{storeId}/events/{eventId}/segments/{segmentId}/replace:
+    post:
+      operationId: replaceSegment
+      tags:
+      - Admission
+      summary: 未入場分の条件変更を新しい版で申請
+      description: '
+
+
+        権限：visit.edit。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: visit.edit
+      x-requirement-ids:
+      - V3-REG-04
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: segmentId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SegmentReplace'
+  /stores/{storeId}/events/{eventId}/visits/{visitId}/cancel:
+    post:
+      operationId: cancelVisit
+      tags:
+      - Admission
+      summary: 未入場分を取消して枠を返却
+      description: '
+
+
+        権限：visit.cancel。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: visit.cancel
+      x-requirement-ids:
+      - V3-POL-09
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisitSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: visitId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonCommand'
+  /stores/{storeId}/events/{eventId}/visits/{visitId}/attribution:
+    post:
+      operationId: changeAttribution
+      tags:
+      - Finance
+      summary: 紹介者帰属を理由付きで訂正
+      description: '
+
+
+        権限：attribution.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: attribution.manage
+      x-requirement-ids:
+      - V4-APR-07
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisitSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: visitId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttributionUpdate'
+  /stores/{storeId}/events/{eventId}/approvals:
+    get:
+      operationId: listApprovals
+      tags:
+      - Approval
+      summary: 指定承認者・入口の共通判断キュー
+      description: '
+
+
+        権限：approval.read。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: approval.read
+      x-requirement-ids:
+      - V4-APR-01
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalSummaryPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: cursor
+        in: query
+        required: false
+        schema: *id002
+        description: 権限・営業・フィルタに結び付けた不透明カーソル
+      - name: limit
+        in: query
+        required: false
+        schema: *id004
+        description: 最大100
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/events/{eventId}/approvals/{requestId}/decisions:
+    post:
+      operationId: decideApproval
+      tags:
+      - Approval
+      summary: 指定者または入口の通常承認・却下・差戻し
+      description: 'routeはサーバー導出。入口は即時判断可。1申請版に1確定、自己申請禁止の初期設定、ハード上限確認。承認だけで入場済みにしない。
+
+
+        権限：approval.decide。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: approval.decide
+      x-requirement-ids:
+      - V4-APR-01
+      - V4-APR-02
+      - V3-APR-02
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: requestId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionCreate'
+  /stores/{storeId}/events/{eventId}/visits/{visitId}/customer-checks:
+    post:
+      operationId: recordCustomerCheck
+      tags:
+      - Admission
+      summary: 入口で常連本人を照合
+      description: '
+
+
+        権限：entrance.match。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: entrance.match
+      x-requirement-ids:
+      - V4-CUS-03
+      - V4-CUS-04
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: visitId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerCheckCreate'
+  /stores/{storeId}/events/{eventId}/visits/{visitId}/entries:
+    post:
+      operationId: createEntry
+      tags:
+      - Admission
+      summary: 支払・照合・最新条件を確認して実入場
+      description: '入口コンテキスト必須。selection毎の残人数、customer_check、決済未充当残高をロック下で検証。入場・売上行・充当・枠・Outboxを原子的に保存。
+
+
+        権限：entrance.checkin。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: entrance.checkin
+      x-requirement-ids:
+      - V4-APR-05
+      - V4-APR-06
+      - V3-ENT-06
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntryResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: visitId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntryCreate'
+  /stores/{storeId}/events/{eventId}/passes/exit:
+    post:
+      operationId: recordExit
+      tags:
+      - Admission
+      summary: 個別パスの退場
+      description: '
+
+
+        権限：entrance.checkout。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: entrance.checkout
+      x-requirement-ids:
+      - V3-ENT-10
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PassMovement'
+  /stores/{storeId}/events/{eventId}/passes/reentry:
+    post:
+      operationId: recordReentry
+      tags:
+      - Admission
+      summary: 個別パスの再入場
+      description: '
+
+
+        権限：entrance.checkin。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: entrance.checkin
+      x-requirement-ids:
+      - V3-ENT-10
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PassMovement'
+  /stores/{storeId}/events/{eventId}/entries/{entryId}/corrections:
+    post:
+      operationId: correctEntry
+      tags:
+      - Admission
+      summary: 原記録を残して人数訂正
+      description: '
+
+
+        権限：entry.correct。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: entry.correct
+      x-requirement-ids:
+      - V3-ENT-11
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: entryId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntryCorrection'
+  /stores/{storeId}/events/{eventId}/provisional-entries/import:
+    post:
+      operationId: importProvisional
+      tags:
+      - Admission
+      summary: 単一受付の暫定記録を照合キューへ
+      description: '
+
+
+        権限：offline.reconcile。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: offline.reconcile
+      x-requirement-ids:
+      - V3-OFF-02
+      responses:
+        '202':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProvisionalImport'
+  /stores/{storeId}/events/{eventId}/snapshot:
+    get:
+      operationId: getSnapshot
+      tags:
+      - Sync
+      summary: 一貫した受付スナップショット
+      description: '
+
+
+        権限：sync.read。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: sync.read
+      x-requirement-ids:
+      - V3-SYNC-03
+      - V4-DEV-03
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: page_token
+        in: query
+        required: false
+        schema: *id002
+        description: 同じスナップショットの続き
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/events/{eventId}/changes:
+    get:
+      operationId: getChanges
+      tags:
+      - Sync
+      summary: カーソル以降の権限内変更
+      description: '
+
+
+        権限：sync.read。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: sync.read
+      x-requirement-ids:
+      - V3-SYNC-02
+      - V4-DEV-03
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangesResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: cursor
+        in: query
+        required: true
+        schema: *id002
+        description: スナップショットで取得した署名付きカーソル
+      - name: limit
+        in: query
+        required: false
+        schema: *id004
+        description: 最大100
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/events/{eventId}/sync-ack:
+    post:
+      operationId: ackSync
+      tags:
+      - Sync
+      summary: 入口の画面へ適用した位置を記録
+      description: '
+
+
+        権限：sync.ack。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: sync.ack
+      x-requirement-ids:
+      - V3-SYNC-04
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ack'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncAck'
+  /stores/{storeId}/events/{eventId}/bookings:
+    get:
+      operationId: listBookings
+      tags:
+      - VIP
+      summary: VIP予約一覧
+      description: '
+
+
+        権限：booking.read。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: booking.read
+      x-requirement-ids: []
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingSummaryPage'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: cursor
+        in: query
+        required: false
+        schema: *id002
+        description: 権限・営業・フィルタに結び付けた不透明カーソル
+      - name: limit
+        in: query
+        required: false
+        schema: *id004
+        description: 最大100
+      - $ref: '#/components/parameters/OperatorContext'
+    post:
+      operationId: createBooking
+      tags:
+      - VIP
+      summary: VIPテーブルを仮押さえ
+      description: '
+
+
+        権限：booking.create。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: booking.create
+      x-requirement-ids:
+      - V3-VIP-01
+      - V3-VIP-02
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCreate'
+  /stores/{storeId}/events/{eventId}/bookings/{bookingId}/move:
+    post:
+      operationId: moveBooking
+      tags:
+      - VIP
+      summary: VIPテーブル移動・結合
+      description: '
+
+
+        権限：booking.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: booking.manage
+      x-requirement-ids:
+      - V3-VIP-04
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: bookingId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingMove'
+  /stores/{storeId}/events/{eventId}/bookings/{bookingId}/decision:
+    post:
+      operationId: decideBooking
+      tags:
+      - VIP
+      summary: VIP予約の承認（フリーと別）
+      description: '
+
+
+        権限：booking.approve。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: booking.approve
+      x-requirement-ids:
+      - V3-VIP-07
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: bookingId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingDecision'
+  /stores/{storeId}/events/{eventId}/bookings/{bookingId}/cancel:
+    post:
+      operationId: cancelBooking
+      tags:
+      - VIP
+      summary: VIP取消と返金要否を評価
+      description: '
+
+
+        権限：booking.cancel。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: booking.cancel
+      x-requirement-ids:
+      - V3-PAY-04
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: bookingId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonCommand'
+  /stores/{storeId}/events/{eventId}/bookings/{bookingId}/checkout:
+    post:
+      operationId: createCheckout
+      tags:
+      - VIP
+      summary: PSPの決済URLを作成
+      description: '
+
+
+        権限：payment.create。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: payment.create
+      x-requirement-ids:
+      - V3-PAY-01
+      - V3-PAY-03
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: bookingId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutCreate'
+  /stores/{storeId}/events/{eventId}/orders:
+    post:
+      operationId: createOrder
+      tags:
+      - Finance
+      summary: 来店会計を作成
+      description: '
+
+
+        権限：sales.record。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: sales.record
+      x-requirement-ids: []
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreate'
+  /stores/{storeId}/events/{eventId}/orders/{orderId}:
+    get:
+      operationId: getOrder
+      tags:
+      - Finance
+      summary: 利用額・支払・未充当を表示
+      description: '
+
+
+        権限：sales.read。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: sales.read
+      x-requirement-ids:
+      - V3-PAY-05
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: orderId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/events/{eventId}/orders/{orderId}/lines:
+    post:
+      operationId: addSalesLine
+      tags:
+      - Finance
+      summary: VIP・店舗利用の会計行を記録
+      description: '通常入場売上は入場コマンドが生成する。手動入力で同じsource_keyを重複計上しない。
+
+
+        権限：sales.record。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: sales.record
+      x-requirement-ids:
+      - V3-FIN-03
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: orderId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SalesLineCreate'
+  /stores/{storeId}/events/{eventId}/orders/{orderId}/payments:
+    post:
+      operationId: recordPayment
+      tags:
+      - Finance
+      summary: 現金・外部端末の受領を記録
+      description: '
+
+
+        権限：payment.record。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: payment.record
+      x-requirement-ids:
+      - V3-PAY-07
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: orderId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRecord'
+  /stores/{storeId}/events/{eventId}/payments/{paymentId}/refunds:
+    post:
+      operationId: createRefund
+      tags:
+      - Finance
+      summary: 返金を冪等指示
+      description: '
+
+
+        権限：payment.refund。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: payment.refund
+      x-requirement-ids:
+      - V3-PAY-04
+      responses:
+        '202':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: paymentId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundCreate'
+  /stores/{storeId}/events/{eventId}/settlements:
+    post:
+      operationId: prepareSettlement
+      tags:
+      - Finance
+      summary: 暫定実績と未照合を集計
+      description: '
+
+
+        権限：settlement.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: settlement.manage
+      x-requirement-ids:
+      - V3-FIN-07
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettlementCreate'
+  /stores/{storeId}/events/{eventId}/settlements/{settlementId}/finalize:
+    post:
+      operationId: finalizeSettlement
+      tags:
+      - Finance
+      summary: 照合済みの営業と報酬を締め
+      description: '
+
+
+        権限：settlement.finalize。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: settlement.finalize
+      x-requirement-ids:
+      - V3-FIN-06
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - name: settlementId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettlementFinalize'
+  /stores/{storeId}/events/{eventId}/reward-disputes:
+    post:
+      operationId: raiseRewardDispute
+      tags:
+      - Finance
+      summary: 自分の報酬明細への異議
+      description: '
+
+
+        権限：reward.dispute。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: reward.dispute
+      x-requirement-ids:
+      - V3-FIN-06
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RewardDisputeCreate'
+  /stores/{storeId}/events/{eventId}/metrics:
+    get:
+      operationId: getMetrics
+      tags:
+      - Finance
+      summary: 営業指標と未計測範囲
+      description: '
+
+
+        権限：report.store。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: report.store
+      x-requirement-ids:
+      - V3-FIN-03
+      - V4-APR-07
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metrics'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/exports:
+    post:
+      operationId: createExport
+      tags:
+      - Admin
+      summary: CSV・Excel・PDF出力を依頼
+      description: '
+
+
+        権限：report.export。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: report.export
+      x-requirement-ids:
+      - V3-FIN-08
+      responses:
+        '202':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportCreate'
+  /stores/{storeId}/exports/{exportId}:
+    get:
+      operationId: getExport
+      tags:
+      - Admin
+      summary: 権限を再検証して出力結果取得
+      description: '
+
+
+        権限：report.export。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: report.export
+      x-requirement-ids: []
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: exportId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/floor-maps:
+    post:
+      operationId: createFloorMap
+      tags:
+      - VIP
+      summary: 2D配置の版を作成
+      description: '
+
+
+        権限：floor.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: floor.manage
+      x-requirement-ids:
+      - V3-VIP-06
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FloorMapCreate'
+  /stores/{storeId}/tables:
+    post:
+      operationId: createTable
+      tags:
+      - VIP
+      summary: 物理テーブルを登録
+      description: '
+
+
+        権限：floor.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: floor.manage
+      x-requirement-ids: []
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableCreate'
+  /stores/{storeId}/templates:
+    post:
+      operationId: createOperatingTemplate
+      tags:
+      - Policy
+      summary: 営業テンプレート作成
+      description: '
+
+
+        権限：policy.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: policy.manage
+      x-requirement-ids: []
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateCreate'
+  /stores/{storeId}/coupons:
+    post:
+      operationId: createCoupon
+      tags:
+      - Policy
+      summary: 割引クーポン条件を登録
+      description: '
+
+
+        権限：coupon.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: coupon.manage
+      x-requirement-ids: []
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CouponCreate'
+  /stores/{storeId}/reward-rules:
+    post:
+      operationId: createRewardRule
+      tags:
+      - Finance
+      summary: 紹介者の報酬規則版を作成
+      description: '
+
+
+        権限：reward.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: reward.manage
+      x-requirement-ids:
+      - V3-FIN-04
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RewardRuleCreate'
+  /stores/{storeId}/notification-templates:
+    post:
+      operationId: createNotificationTemplate
+      tags:
+      - Admin
+      summary: 日英通知テンプレートを登録
+      description: '
+
+
+        権限：notification.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: notification.manage
+      x-requirement-ids: []
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationTemplateCreate'
+  /stores/{storeId}/imports:
+    post:
+      operationId: createImport
+      tags:
+      - Admin
+      summary: 移行ファイルの検証を依頼
+      description: '
+
+
+        権限：import.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: import.manage
+      x-requirement-ids: []
+      responses:
+        '202':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportCreate'
+  /stores/{storeId}/permits/{permitId}/preview-revocation:
+    post:
+      operationId: previewPermitRevocation
+      tags:
+      - Policy
+      summary: 取消する未入場分の影響を確認
+      description: '
+
+
+        権限：permit.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: permit.manage
+      x-requirement-ids:
+      - V4-CFG-06
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: permitId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PermitPreview'
+  /stores/{storeId}/events/{eventId}/policy:
+    get:
+      operationId: getActivePolicy
+      tags:
+      - Policy
+      summary: 現在有効な営業設定と版を取得
+      description: '
+
+
+        権限：policy.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: policy.manage
+      x-requirement-ids:
+      - V4-CFG-05
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicySummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/OperatorContext'
+  /stores/{storeId}/memberships/{membershipId}/operator-pin:
+    put:
+      operationId: resetOperatorPin
+      tags:
+      - Identity
+      summary: 共用端末用の個人PINを設定・再発行
+      description: '追加認証した管理者のみ。PINはwriteOnly・ログ禁止。既存operatorセッションを失効させる。実際の初回配布方法は認証設計審査で確定。
+
+
+        権限：credential.manage。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: credential.manage
+      x-requirement-ids:
+      - V4-KSK-02
+      - V4-KSK-05
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ack'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: membershipId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/CsrfToken'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/OperatorContext'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PinReset'
+  /stores/{storeId}/events/{eventId}/my-performance:
+    get:
+      operationId: getOwnPerformance
+      tags:
+      - Finance
+      summary: 自分の集客・売上・報酬見込み
+      description: '対象紹介者はサーバーが現在所属から導出。他人のmembership_idを受け取らない。報酬未合意はnull、店内未紐付けはnull。
+
+
+        権限：report.own。入口モードでは有効な端末・担当者・当日役割を検証。主体IDをbodyで偽装できない。'
+      security: *id001
+      x-permission: report.own
+      x-requirement-ids:
+      - V3-FIN-03
+      - V3-FIN-06
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnPerformance'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: *id003
+      - name: eventId
+        in: path
+        required: true
+        schema: *id003
+      - $ref: '#/components/parameters/OperatorContext'
+  /public/{publicToken}/bookings:
+    post:
+      operationId: createPublicBooking
+      tags:
+      - Public
+      summary: 顧客のVIP予約と最小来店を作成
+      description: 'publicTokenは公開営業フォーム識別子。帰属と価格はサーバー導出。顧客は常連指定・フリー許可・承認権限を取得しない。返却は当該予約に限定。
+
+
+        権限：public.booking。公開経路でもレート制限・適用範囲・冪等性をサーバーで検証。'
+      security: []
+      x-permission: public.booking
+      x-requirement-ids:
+      - V3-VIP-01
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingSummary'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: publicToken
+        in: path
+        required: true
+        schema: *id002
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicBookingCreate'
+  /public/bookings/{publicToken}/checkout:
+    post:
+      operationId: createPublicCheckout
+      tags:
+      - Public
+      summary: 当該予約のゲスト用決済開始
+      description: '
+
+
+        権限：public.booking.checkout。公開経路でもレート制限・適用範囲・冪等性をサーバーで検証。'
+      security: []
+      x-permission: public.booking.checkout
+      x-requirement-ids:
+      - V3-PAY-01
+      responses:
+        '201':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: publicToken
+        in: path
+        required: true
+        schema: *id002
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutCreate'
+  /integrations/{provider}/webhooks:
+    post:
+      operationId: receiveWebhook
+      tags:
+      - Integration
+      summary: PSP等の署名付き通知を受領
+      description: '本契約は生body受領の共通境界。署名header・検証鍵・イベントスキーマは選定PSPのadapter仕様で確定。未選定adapterは公開しない。署名検証とdurable inbox保存後に2xx。
+
+
+        権限：provider.signature。公開経路でもレート制限・適用範囲・冪等性をサーバーで検証。'
+      security: []
+      x-permission: provider.signature
+      x-requirement-ids:
+      - V3-PAY-02
+      responses:
+        '200':
+          description: 成功（外部処理待ちは状態で明示）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ack'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '410':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: 生バイト列で署名検証後、選定済みprovider schemaで検証。
+components:
+  securitySchemes:
+    PersonalSession:
+      type: apiKey
+      in: cookie
+      name: __Host-nc_personal
+    DeviceSession:
+      type: apiKey
+      in: cookie
+      name: __Host-nc_device
+    OperatorSession:
+      type: apiKey
+      in: cookie
+      name: __Host-nc_operator
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 160
+      description: 同じ業務操作は同じキー。異なるpayloadへの流用は409。金銭は保存済み参照も照合。
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: *id002
+      description: cookie認証の状態変更に必要。Origin/Fetch Metadataも検証。
+    OperatorContext:
+      name: X-Operator-Context
+      in: header
+      required: false
+      schema: *id003
+      description: 入口モードでは必須。画面描画時のoperator_session_id。認証手段ではない。cookie主体とサーバーactive sessionに一致しなければ409 OPERATOR_CHANGED。個人モードでは不要。
+  schemas:
+    Problem:
+      type: object
+      properties:
+        type: *id002
+        title: *id002
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail: *id002
+        code: *id002
+        trace_id: *id003
+        current_version:
+          type:
+          - integer
+          - 'null'
+        retryable:
+          type: boolean
+        field_errors:
+          type: array
+          items:
+            type: object
+            properties:
+              path: *id002
+              code: *id002
+              message: *id002
+            required:
+            - path
+            - code
+            - message
+            additionalProperties: false
+      required:
+      - type
+      - title
+      - status
+      - code
+      - trace_id
+      - retryable
+      additionalProperties: false
+    Ack:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+        trace_id: *id003
+      required:
+      - accepted
+      - trace_id
+      additionalProperties: false
+    CommandResult:
+      type: object
+      properties:
+        resource_id: *id003
+        version: &id005
+          type: integer
+          minimum: 1
+        status: *id002
+        trace_id: *id003
+        operation_key: *id002
+      required:
+      - resource_id
+      - version
+      - status
+      - trace_id
+      additionalProperties: false
+    VersionCommand:
+      type: object
+      properties:
+        expected_version: *id005
+      required:
+      - expected_version
+      additionalProperties: false
+    ReasonCommand:
+      type: object
+      properties:
+        expected_version: *id005
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - expected_version
+      - reason
+      additionalProperties: false
+    ActorContext:
+      type: object
+      properties:
+        user_id: *id003
+        membership_id: *id003
+        store_id: *id003
+        display_name: *id002
+        permissions:
+          type: array
+          items: *id002
+        mode:
+          type: string
+          enum:
+          - PERSONAL
+          - ENTRANCE
+        operator_session_id: &id006
+          type:
+          - string
+          - 'null'
+          format: uuid
+        device_id: *id006
+        event_id: *id006
+      required:
+      - user_id
+      - membership_id
+      - store_id
+      - display_name
+      - permissions
+      - mode
+      - operator_session_id
+      - device_id
+      - event_id
+      additionalProperties: false
+    LoginStart:
+      type: object
+      properties:
+        authorization_url:
+          type: string
+          format: uri
+        expires_at: &id007
+          type: string
+          format: date-time
+      required:
+      - authorization_url
+      - expires_at
+      additionalProperties: false
+    EnrollmentCreate:
+      type: object
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 60
+      required:
+      - label
+      additionalProperties: false
+    EnrollmentResult:
+      type: object
+      properties:
+        enrollment_id: *id003
+        pairing_code: *id002
+        expires_at: *id007
+      required:
+      - enrollment_id
+      - pairing_code
+      - expires_at
+      additionalProperties: false
+    EnrollmentConsume:
+      type: object
+      properties:
+        pairing_code:
+          type: string
+          minLength: 6
+          maxLength: 100
+      required:
+      - pairing_code
+      additionalProperties: false
+    OperatorUnlock:
+      type: object
+      properties:
+        membership_id: *id003
+        event_id: *id003
+        pin:
+          type: string
+          pattern: ^[0-9]{6,12}$
+          writeOnly: true
+      required:
+      - membership_id
+      - event_id
+      - pin
+      additionalProperties: false
+    OperatorResult:
+      type: object
+      properties:
+        operator_session_id: *id003
+        operator_epoch:
+          type: integer
+          minimum: 1
+        actor:
+          $ref: '#/components/schemas/ActorContext'
+        expires_at: *id007
+      required:
+      - operator_session_id
+      - operator_epoch
+      - actor
+      - expires_at
+      additionalProperties: false
+    MembershipSummary:
+      type: object
+      properties:
+        id: *id003
+        version: *id005
+        display_name: *id002
+        status: *id002
+        role_keys:
+          type: array
+          items: *id002
+      required:
+      - id
+      - version
+      - display_name
+      - status
+      - role_keys
+      additionalProperties: false
+    DeviceSummary:
+      type: object
+      properties:
+        id: *id003
+        version: *id005
+        label: *id002
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACTIVE
+          - REVOKED
+        current_operator:
+          type:
+          - string
+          - 'null'
+        last_seen_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - version
+      - label
+      - status
+      - current_operator
+      - last_seen_at
+      additionalProperties: false
+    EventCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        opens_at: *id007
+        closes_at: *id007
+      required:
+      - name
+      - opens_at
+      - closes_at
+      additionalProperties: false
+    EventSummary:
+      type: object
+      properties:
+        id: *id003
+        name: *id002
+        opens_at: *id007
+        closes_at: *id007
+        status: *id002
+        version: *id005
+      required:
+      - id
+      - name
+      - opens_at
+      - closes_at
+      - status
+      - version
+      additionalProperties: false
+    CustomerSummary:
+      type: object
+      properties:
+        id: *id003
+        display_name: *id002
+        regular_status:
+          type: string
+          enum:
+          - NONE
+          - DESIGNATED
+          - REVOKED
+        masked_hint:
+          type:
+          - string
+          - 'null'
+        version: *id005
+      required:
+      - id
+      - display_name
+      - regular_status
+      - masked_hint
+      - version
+      additionalProperties: false
+    CustomerCreate:
+      type: object
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        reading:
+          type: string
+          minLength: 0
+          maxLength: 100
+        aliases:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+      required:
+      - display_name
+      additionalProperties: false
+    CustomerUpdate:
+      type: object
+      properties:
+        expected_version: *id005
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        reading:
+          type: string
+          minLength: 0
+          maxLength: 100
+        aliases:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+      required:
+      - expected_version
+      additionalProperties: false
+    RegularDesignation:
+      type: object
+      properties:
+        expected_version: *id005
+        regular_status:
+          type: string
+          enum:
+          - DESIGNATED
+          - REVOKED
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - expected_version
+      - regular_status
+      - reason
+      additionalProperties: false
+    SegmentCreate:
+      type: object
+      properties:
+        rule_key:
+          type: string
+          minLength: 1
+          maxLength: 40
+        count: *id005
+        requested_customer_id: *id006
+      required:
+      - rule_key
+      - count
+      additionalProperties: false
+    VisitCreate:
+      type: object
+      properties:
+        reception_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        reading:
+          type: string
+          minLength: 0
+          maxLength: 100
+        planned_count: *id005
+        customer_id: *id006
+        referrer_membership_id: *id006
+        arrival_status:
+          type: string
+          enum:
+          - UNKNOWN
+          - ON_WAY
+          - ARRIVED
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SegmentCreate'
+          minItems: 1
+          maxItems: 50
+        approval_reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - reception_name
+      - planned_count
+      - segments
+      additionalProperties: false
+    VisitUpdate:
+      type: object
+      properties:
+        expected_version: *id005
+        reception_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        reading:
+          type: string
+          minLength: 0
+          maxLength: 100
+        arrival_status:
+          type: string
+          enum:
+          - UNKNOWN
+          - ON_WAY
+          - ARRIVED
+      required:
+      - expected_version
+      additionalProperties: false
+    SegmentSummary:
+      type: object
+      properties:
+        id: *id003
+        version: *id005
+        status:
+          type: string
+          enum:
+          - PENDING
+          - AUTHORIZED
+          - REJECTED
+          - RETURNED
+          - REVOKED
+          - EXPIRED
+        requested_count: *id005
+        authorized_count:
+          type: integer
+          minimum: 0
+        first_entered_count:
+          type: integer
+          minimum: 0
+        remaining_count:
+          type: integer
+          minimum: 0
+        unit_amount_minor: &id008
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+        authorization_method:
+          type:
+          - string
+          - 'null'
+          enum:
+          - STANDARD
+          - TRUSTED_ACTOR
+          - CUSTOMER_PERMIT
+          - MANUAL
+          - null
+        requires_identity_check:
+          type: boolean
+        entry_until: *id007
+      required:
+      - id
+      - version
+      - status
+      - requested_count
+      - authorized_count
+      - first_entered_count
+      - remaining_count
+      - unit_amount_minor
+      - currency
+      - authorization_method
+      - requires_identity_check
+      - entry_until
+      additionalProperties: false
+    VisitSummary:
+      type: object
+      properties:
+        id: *id003
+        version: *id005
+        reception_name: *id002
+        customer_id: *id006
+        referrer_membership_id: *id006
+        referrer_name:
+          type:
+          - string
+          - 'null'
+        arrival_status: *id002
+        status: *id002
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SegmentSummary'
+        entry_device_sync:
+          type: object
+          properties:
+            active_devices:
+              type: integer
+              minimum: 0
+            synced_devices:
+              type: integer
+              minimum: 0
+          required:
+          - active_devices
+          - synced_devices
+          additionalProperties: false
+      required:
+      - id
+      - version
+      - reception_name
+      - customer_id
+      - referrer_membership_id
+      - referrer_name
+      - arrival_status
+      - status
+      - segments
+      - entry_device_sync
+      additionalProperties: false
+    SegmentAdd:
+      type: object
+      properties:
+        expected_visit_version: *id005
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SegmentCreate'
+          minItems: 1
+        approval_reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - expected_visit_version
+      - segments
+      additionalProperties: false
+    SegmentReplace:
+      type: object
+      properties:
+        expected_version: *id005
+        rule_key:
+          type: string
+          minLength: 1
+          maxLength: 40
+        count: *id005
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - expected_version
+      - rule_key
+      - count
+      - reason
+      additionalProperties: false
+    DecisionCreate:
+      type: object
+      properties:
+        expected_request_version: *id005
+        expected_segment_version: *id005
+        decision:
+          type: string
+          enum:
+          - APPROVED
+          - REJECTED
+          - RETURNED
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - expected_request_version
+      - expected_segment_version
+      - decision
+      additionalProperties: false
+    DecisionResult:
+      type: object
+      properties:
+        decision_id: *id003
+        request_id: *id003
+        decision:
+          type: string
+          enum:
+          - APPROVED
+          - REJECTED
+          - RETURNED
+        route:
+          type: string
+          enum:
+          - DESIGNATED
+          - ENTRANCE
+        decided_by: *id003
+        segment:
+          $ref: '#/components/schemas/SegmentSummary'
+        trace_id: *id003
+      required:
+      - decision_id
+      - request_id
+      - decision
+      - route
+      - decided_by
+      - segment
+      - trace_id
+      additionalProperties: false
+    ApprovalSummary:
+      type: object
+      properties:
+        id: *id003
+        request_version: *id005
+        segment_version: *id005
+        visit_id: *id003
+        segment_id: *id003
+        reception_name: *id002
+        count: *id005
+        reason: *id002
+        status: *id002
+        requested_by: *id003
+        can_decide:
+          type: boolean
+      required:
+      - id
+      - request_version
+      - segment_version
+      - visit_id
+      - segment_id
+      - reception_name
+      - count
+      - reason
+      - status
+      - requested_by
+      - can_decide
+      additionalProperties: false
+    CustomerCheckCreate:
+      type: object
+      properties:
+        customer_id: *id003
+        method:
+          type: string
+          enum:
+          - KNOWN_BY_STAFF
+          - BOOKING_CONTEXT
+          - CONTACT_HINT
+          - OTHER
+        note:
+          type: string
+          minLength: 1
+          maxLength: 300
+      required:
+      - customer_id
+      - method
+      additionalProperties: false
+    EntrySelection:
+      type: object
+      properties:
+        segment_id: *id003
+        expected_version: *id005
+        count: *id005
+        customer_check_id: *id006
+      required:
+      - segment_id
+      - expected_version
+      - count
+      additionalProperties: false
+    EntryCreate:
+      type: object
+      properties:
+        expected_visit_version: *id005
+        selections:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntrySelection'
+          minItems: 1
+        payment_ids:
+          type: array
+          items: *id003
+        pass_id: *id006
+      required:
+      - expected_visit_version
+      - selections
+      additionalProperties: false
+    EntryResult:
+      type: object
+      properties:
+        entry_ids:
+          type: array
+          items: *id003
+        visit:
+          $ref: '#/components/schemas/VisitSummary'
+        trace_id: *id003
+      required:
+      - entry_ids
+      - visit
+      - trace_id
+      additionalProperties: false
+    PassMovement:
+      type: object
+      properties:
+        pass_id: *id003
+        expected_version: *id005
+      required:
+      - pass_id
+      - expected_version
+      additionalProperties: false
+    EntryCorrection:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        present_delta:
+          type: integer
+        first_entry_delta:
+          type: integer
+        expected_visit_version: *id005
+      required:
+      - reason
+      - present_delta
+      - first_entry_delta
+      - expected_visit_version
+      additionalProperties: false
+    AttributionUpdate:
+      type: object
+      properties:
+        expected_version: *id005
+        referrer_membership_id: *id006
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - expected_version
+      - referrer_membership_id
+      - reason
+      additionalProperties: false
+    PolicyDocument:
+      title: 営業ポリシー版 v4。日時関係・ID所属・枠合計等はサーバー検証が別途必要。
+      type: object
+      properties:
+        schema_version:
+          const: 4.0.0
+        environment:
+          type: string
+          enum:
+          - EXAMPLE_ONLY
+          - PRODUCTION_CONFIG
+        event_id:
+          type: string
+          format: uuid
+        timezone:
+          type: string
+          minLength: 1
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        registration_from:
+          type: string
+          format: date-time
+        registration_to:
+          type: string
+          format: date-time
+        apply_mode:
+          type: string
+          enum:
+          - NEW_ONLY
+          - REASSESS_UNENTERED
+        price_rules:
+          type: array
+          items:
+            type: object
+            properties:
+              rule_key:
+                type: string
+                pattern: ^[a-z][a-z0-9_]{1,39}$
+              label:
+                type: string
+                minLength: 1
+                maxLength: 80
+              kind:
+                type: string
+                enum:
+                - NORMAL
+                - DISCOUNT
+                - FREE
+              amount_minor:
+                type: integer
+                minimum: 0
+              entry_from:
+                type: string
+                format: date-time
+              entry_to:
+                type: string
+                format: date-time
+              payment_required:
+                type: boolean
+              standard_allowed:
+                type: boolean
+            required:
+            - rule_key
+            - label
+            - kind
+            - amount_minor
+            - entry_from
+            - entry_to
+            - payment_required
+            - standard_allowed
+            additionalProperties: false
+            allOf:
+            - if:
+                properties:
+                  kind:
+                    const: FREE
+              then:
+                properties:
+                  amount_minor:
+                    const: 0
+                  payment_required:
+                    const: false
+          minItems: 1
+        event_free_limit:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum:
+              - UNSET
+              - LIMITED
+              - UNLIMITED
+            value:
+              type:
+              - integer
+              - 'null'
+              minimum: 0
+          required:
+          - mode
+          - value
+          additionalProperties: false
+          allOf:
+          - if:
+              properties:
+                mode:
+                  const: LIMITED
+            then:
+              properties:
+                value:
+                  type: integer
+                  minimum: 0
+            else:
+              properties:
+                value:
+                  type: 'null'
+        max_party_size:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum:
+              - UNSET
+              - LIMITED
+              - UNLIMITED
+            value:
+              type:
+              - integer
+              - 'null'
+              minimum: 0
+          required:
+          - mode
+          - value
+          additionalProperties: false
+          allOf:
+          - if:
+              properties:
+                mode:
+                  const: LIMITED
+            then:
+              properties:
+                value:
+                  type: integer
+                  minimum: 0
+            else:
+              properties:
+                value:
+                  type: 'null'
+        approval:
+          type: object
+          properties:
+            designated_member_ids:
+              type: array
+              items:
+                type: string
+                format: uuid
+              uniqueItems: true
+              maxItems: 3
+            entrance_regular_approval:
+              const: true
+            self_approval_allowed:
+              type: boolean
+              default: false
+            renotify_after_seconds:
+              type:
+              - integer
+              - 'null'
+              minimum: 30
+            escalate_after_seconds:
+              type:
+              - integer
+              - 'null'
+              minimum: 30
+          required:
+          - designated_member_ids
+          - entrance_regular_approval
+          - self_approval_allowed
+          - renotify_after_seconds
+          - escalate_after_seconds
+          additionalProperties: false
+        default_companion_policy:
+          type: string
+          enum:
+          - PRINCIPAL_ONLY
+          - LIMITED_COMPANIONS
+        customer_match_methods:
+          type: array
+          items:
+            type: string
+            enum:
+            - KNOWN_BY_STAFF
+            - BOOKING_CONTEXT
+            - CONTACT_HINT
+            - OTHER
+          minItems: 1
+          uniqueItems: true
+        limits_unset_block_publish:
+          const: true
+      required:
+      - schema_version
+      - environment
+      - event_id
+      - timezone
+      - currency
+      - effective_from
+      - effective_to
+      - registration_from
+      - registration_to
+      - apply_mode
+      - price_rules
+      - event_free_limit
+      - max_party_size
+      - approval
+      - default_companion_policy
+      - customer_match_methods
+      - limits_unset_block_publish
+      additionalProperties: false
+    PermitDocument:
+      title: 顧客／登録者事前許可の内容
+      type: object
+      properties:
+        subject_kind:
+          type: string
+          enum:
+          - CUSTOMER
+          - ACTOR
+        subject_id:
+          type: string
+          format: uuid
+        store_id:
+          type: string
+          format: uuid
+        event_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+          minItems: 1
+        allowed_rule_keys:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          uniqueItems: true
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type: string
+          format: date-time
+        party_limit:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum:
+              - UNSET
+              - LIMITED
+              - UNLIMITED
+            value:
+              type:
+              - integer
+              - 'null'
+              minimum: 0
+          required:
+          - mode
+          - value
+          additionalProperties: false
+          allOf:
+          - if:
+              properties:
+                mode:
+                  const: LIMITED
+            then:
+              properties:
+                value:
+                  type: integer
+                  minimum: 0
+            else:
+              properties:
+                value:
+                  type: 'null'
+        event_limit:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum:
+              - UNSET
+              - LIMITED
+              - UNLIMITED
+            value:
+              type:
+              - integer
+              - 'null'
+              minimum: 0
+          required:
+          - mode
+          - value
+          additionalProperties: false
+          allOf:
+          - if:
+              properties:
+                mode:
+                  const: LIMITED
+            then:
+              properties:
+                value:
+                  type: integer
+                  minimum: 0
+            else:
+              properties:
+                value:
+                  type: 'null'
+        companion_limit:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum:
+              - UNSET
+              - LIMITED
+              - UNLIMITED
+            value:
+              type:
+              - integer
+              - 'null'
+              minimum: 0
+          required:
+          - mode
+          - value
+          additionalProperties: false
+          allOf:
+          - if:
+              properties:
+                mode:
+                  const: LIMITED
+            then:
+              properties:
+                value:
+                  type: integer
+                  minimum: 0
+            else:
+              properties:
+                value:
+                  type: 'null'
+        principal_presence_required:
+          type: boolean
+        proxy_registration_allowed:
+          type: boolean
+        proxy_referrer_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - subject_kind
+      - subject_id
+      - store_id
+      - event_ids
+      - allowed_rule_keys
+      - valid_from
+      - valid_to
+      - party_limit
+      - event_limit
+      - companion_limit
+      - principal_presence_required
+      - proxy_registration_allowed
+      - proxy_referrer_ids
+      - reason
+      additionalProperties: false
+    PolicyCreate:
+      type: object
+      properties:
+        expected_event_version: *id005
+        policy:
+          $ref: '#/components/schemas/PolicyDocument'
+      required:
+      - expected_event_version
+      - policy
+      additionalProperties: false
+    PolicyPreview:
+      type: object
+      properties:
+        expected_version: *id005
+        apply_mode:
+          type: string
+          enum:
+          - NEW_ONLY
+          - REASSESS_UNENTERED
+      required:
+      - expected_version
+      - apply_mode
+      additionalProperties: false
+    PreviewResult:
+      type: object
+      properties:
+        preview_token: *id002
+        policy_version: *id005
+        affected_unentered_count:
+          type: integer
+          minimum: 0
+        warnings:
+          type: array
+          items: *id002
+        blocking_errors:
+          type: array
+          items: *id002
+        expires_at: *id007
+      required:
+      - preview_token
+      - policy_version
+      - affected_unentered_count
+      - warnings
+      - blocking_errors
+      - expires_at
+      additionalProperties: false
+    PolicyPublish:
+      type: object
+      properties:
+        expected_version: *id005
+        preview_token: *id002
+        apply_mode:
+          type: string
+          enum:
+          - NEW_ONLY
+          - REASSESS_UNENTERED
+      required:
+      - expected_version
+      - preview_token
+      - apply_mode
+      additionalProperties: false
+    PermitCreate:
+      type: object
+      properties:
+        permit:
+          $ref: '#/components/schemas/PermitDocument'
+      required:
+      - permit
+      additionalProperties: false
+    PermitRevocation:
+      type: object
+      properties:
+        expected_version: *id005
+        apply_mode:
+          type: string
+          enum:
+          - NEW_ONLY
+          - REASSESS_UNENTERED
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        preview_token: *id002
+      required:
+      - expected_version
+      - apply_mode
+      - reason
+      additionalProperties: false
+    BookingCreate:
+      type: object
+      properties:
+        visit_id: *id003
+        table_ids:
+          type: array
+          items: *id003
+          minItems: 1
+          uniqueItems: true
+        party_count: *id005
+        starts_at: *id007
+        ends_at: *id007
+        accepted_policy_version: *id005
+      required:
+      - visit_id
+      - table_ids
+      - party_count
+      - starts_at
+      - ends_at
+      - accepted_policy_version
+      additionalProperties: false
+    BookingSummary:
+      type: object
+      properties:
+        id: *id003
+        visit_id: *id003
+        version: *id005
+        status: *id002
+        table_ids:
+          type: array
+          items: *id003
+        hold_expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        minimum_minor: *id008
+        deposit_minor: *id008
+        currency: *id002
+        admission_pricing:
+          type: string
+          enum:
+          - INCLUDED
+          - SEPARATE
+      required:
+      - id
+      - visit_id
+      - version
+      - status
+      - table_ids
+      - hold_expires_at
+      - minimum_minor
+      - deposit_minor
+      - currency
+      - admission_pricing
+      additionalProperties: false
+    BookingMove:
+      type: object
+      properties:
+        expected_version: *id005
+        table_ids:
+          type: array
+          items: *id003
+          minItems: 1
+          uniqueItems: true
+        starts_at: *id007
+        ends_at: *id007
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - expected_version
+      - table_ids
+      - starts_at
+      - ends_at
+      - reason
+      additionalProperties: false
+    BookingDecision:
+      type: object
+      properties:
+        expected_version: *id005
+        decision:
+          type: string
+          enum:
+          - APPROVED
+          - REJECTED
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - expected_version
+      - decision
+      additionalProperties: false
+    CheckoutCreate:
+      type: object
+      properties:
+        expected_booking_version: *id005
+        return_path:
+          type: string
+          pattern: ^/[a-zA-Z0-9/_?=&-]*$
+      required:
+      - expected_booking_version
+      - return_path
+      additionalProperties: false
+    CheckoutResult:
+      type: object
+      properties:
+        payment_id: *id003
+        checkout_url:
+          type: string
+          format: uri
+        expires_at: *id007
+        status: *id002
+      required:
+      - payment_id
+      - checkout_url
+      - expires_at
+      - status
+      additionalProperties: false
+    PaymentRecord:
+      type: object
+      properties:
+        method:
+          type: string
+          enum:
+          - CASH
+          - EXTERNAL_TERMINAL
+        purpose:
+          type: string
+          enum:
+          - DEPOSIT
+          - FINAL
+          - ADMISSION
+        amount_minor: *id008
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+        external_reference:
+          type: string
+          minLength: 1
+          maxLength: 200
+      required:
+      - method
+      - purpose
+      - amount_minor
+      - currency
+      additionalProperties: false
+    RefundCreate:
+      type: object
+      properties:
+        amount_minor: *id008
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        expected_payment_version: *id005
+      required:
+      - amount_minor
+      - reason
+      - expected_payment_version
+      additionalProperties: false
+    SalesLineCreate:
+      type: object
+      properties:
+        category:
+          type: string
+          enum:
+          - ADMISSION
+          - VIP
+          - IN_VENUE
+          - CANCELLATION
+          - REENTRY
+        description:
+          type: string
+          minLength: 1
+          maxLength: 200
+        quantity: *id005
+        gross_minor: *id008
+        tax_minor: *id008
+        currency: *id002
+        source_key:
+          type: string
+          minLength: 1
+          maxLength: 160
+      required:
+      - category
+      - description
+      - quantity
+      - gross_minor
+      - tax_minor
+      - currency
+      - source_key
+      additionalProperties: false
+    OrderCreate:
+      type: object
+      properties:
+        visit_id: *id003
+        booking_id: *id006
+        kind:
+          type: string
+          enum:
+          - ADMISSION
+          - VIP
+          - IN_VENUE
+        currency: *id002
+      required:
+      - visit_id
+      - kind
+      - currency
+      additionalProperties: false
+    OrderSummary:
+      type: object
+      properties:
+        id: *id003
+        visit_id: *id003
+        version: *id005
+        currency: *id002
+        status: *id002
+        sales_gross_minor:
+          type: integer
+        paid_minor: *id008
+        unallocated_minor: *id008
+        refund_pending_minor: *id008
+      required:
+      - id
+      - visit_id
+      - version
+      - currency
+      - status
+      - sales_gross_minor
+      - paid_minor
+      - unallocated_minor
+      - refund_pending_minor
+      additionalProperties: false
+    SettlementCreate:
+      type: object
+      properties:
+        expected_event_version: *id005
+      required:
+      - expected_event_version
+      additionalProperties: false
+    SettlementFinalize:
+      type: object
+      properties:
+        expected_version: *id005
+        unresolved_exception_reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - expected_version
+      additionalProperties: false
+    RewardDisputeCreate:
+      type: object
+      properties:
+        settlement_line_id: *id003
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - settlement_line_id
+      - reason
+      additionalProperties: false
+    SnapshotResult:
+      type: object
+      properties:
+        snapshot_token: *id002
+        cursor: *id002
+        expires_at: *id007
+        visits:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisitSummary'
+        has_more:
+          type: boolean
+        next_page_token:
+          type:
+          - string
+          - 'null'
+      required:
+      - snapshot_token
+      - cursor
+      - expires_at
+      - visits
+      - has_more
+      - next_page_token
+      additionalProperties: false
+    ChangeEvent:
+      type: object
+      properties:
+        event_id: *id003
+        stream_seq:
+          type: integer
+          minimum: 1
+        event_type: *id002
+        aggregate_type: *id002
+        aggregate_id: *id003
+        aggregate_version: *id005
+        action:
+          type: string
+          enum:
+          - UPSERT
+          - INVALIDATE
+          - REMOVE
+        data:
+          type:
+          - object
+          - 'null'
+          description: 権限に応じたVisitSummaryまたは最小無効化情報。raw outboxの転送は禁止。
+      required:
+      - event_id
+      - stream_seq
+      - event_type
+      - aggregate_type
+      - aggregate_id
+      - aggregate_version
+      - action
+      - data
+      additionalProperties: false
+    ChangesResult:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeEvent'
+        next_cursor: *id002
+        reset_required:
+          type: boolean
+        has_more:
+          type: boolean
+      required:
+      - events
+      - next_cursor
+      - reset_required
+      - has_more
+      additionalProperties: false
+    SyncAck:
+      type: object
+      properties:
+        snapshot_token: *id002
+        cursor: *id002
+        visibility:
+          type: string
+          enum:
+          - FOREGROUND
+          - BACKGROUND
+      required:
+      - snapshot_token
+      - cursor
+      - visibility
+      additionalProperties: false
+    ExportCreate:
+      type: object
+      properties:
+        report_kind:
+          type: string
+          enum:
+          - ADMISSION
+          - SALES
+          - REWARDS
+          - DAILY
+        format:
+          type: string
+          enum:
+          - CSV
+          - XLSX
+          - PDF
+        event_ids:
+          type: array
+          items: *id003
+          minItems: 1
+        include_provisional:
+          type: boolean
+      required:
+      - report_kind
+      - format
+      - event_ids
+      - include_provisional
+      additionalProperties: false
+    ExportSummary:
+      type: object
+      properties:
+        id: *id003
+        status: *id002
+        download_url:
+          type:
+          - string
+          - 'null'
+          format: uri
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - status
+      - download_url
+      - expires_at
+      additionalProperties: false
+    InviteCreate:
+      type: object
+      properties:
+        target:
+          type: string
+          minLength: 1
+          maxLength: 200
+        role_id: *id003
+        expires_at: *id007
+      required:
+      - target
+      - role_id
+      - expires_at
+      additionalProperties: false
+    RoleUpdate:
+      type: object
+      properties:
+        expected_version: *id005
+        permission_keys:
+          type: array
+          items: *id002
+          uniqueItems: true
+      required:
+      - expected_version
+      - permission_keys
+      additionalProperties: false
+    AssignmentsUpdate:
+      type: object
+      properties:
+        expected_event_version: *id005
+        assignments:
+          type: array
+          items:
+            type: object
+            properties:
+              membership_id: *id003
+              kind:
+                type: string
+                enum:
+                - REFERRER
+                - DESIGNATED_APPROVER
+                - ENTRANCE
+                - ENTRANCE_APPROVER
+                - RESERVATION
+              starts_at: *id007
+              ends_at: *id007
+            required:
+            - membership_id
+            - kind
+            - starts_at
+            - ends_at
+            additionalProperties: false
+      required:
+      - expected_event_version
+      - assignments
+      additionalProperties: false
+    FloorMapCreate:
+      type: object
+      properties:
+        expected_store_version: *id005
+        layout:
+          type: object
+          properties:
+            width:
+              type: number
+              exclusiveMinimum: 0
+            height:
+              type: number
+              exclusiveMinimum: 0
+            elements:
+              type: array
+              items:
+                type: object
+                properties:
+                  element_id: *id002
+                  kind:
+                    type: string
+                    enum:
+                    - TABLE
+                    - STAGE
+                    - BAR
+                    - ENTRANCE
+                    - PATH
+                  table_id: *id006
+                  x:
+                    type: number
+                  y:
+                    type: number
+                  width:
+                    type: number
+                    exclusiveMinimum: 0
+                  height:
+                    type: number
+                    exclusiveMinimum: 0
+                required:
+                - element_id
+                - kind
+                - x
+                - y
+                - width
+                - height
+                additionalProperties: false
+          required:
+          - width
+          - height
+          - elements
+          additionalProperties: false
+      required:
+      - expected_store_version
+      - layout
+      additionalProperties: false
+    TableCreate:
+      type: object
+      properties:
+        table_code:
+          type: string
+          minLength: 1
+          maxLength: 40
+        zone:
+          type: string
+          minLength: 1
+          maxLength: 80
+        capacity_min: *id005
+        capacity_max: *id005
+      required:
+      - table_code
+      - zone
+      - capacity_min
+      - capacity_max
+      additionalProperties: false
+    TemplateCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        policy:
+          $ref: '#/components/schemas/PolicyDocument'
+      required:
+      - name
+      - policy
+      additionalProperties: false
+    ImportCreate:
+      type: object
+      properties:
+        source_system:
+          type: string
+          minLength: 1
+          maxLength: 80
+        object_key:
+          type: string
+          minLength: 1
+          maxLength: 300
+        mapping:
+          type: object
+          additionalProperties:
+            type: string
+      required:
+      - source_system
+      - object_key
+      - mapping
+      additionalProperties: false
+    CouponCreate:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 4
+          maxLength: 40
+        valid_from: *id007
+        valid_to: *id007
+        discount_kind:
+          type: string
+          enum:
+          - AMOUNT
+          - PERCENT
+        discount_value: *id008
+        max_uses:
+          type: integer
+          minimum: 1
+        owner_membership_id: *id006
+        rule_keys:
+          type: array
+          items: *id002
+      required:
+      - code
+      - valid_from
+      - valid_to
+      - discount_kind
+      - discount_value
+      - max_uses
+      - rule_keys
+      additionalProperties: false
+    RewardRuleCreate:
+      type: object
+      properties:
+        referrer_membership_id: *id006
+        valid_from: *id007
+        valid_to: *id007
+        basis:
+          type: string
+          enum:
+          - FIRST_PAID_ENTRY
+          - ATTRIBUTED_GROSS
+          - ATTRIBUTED_NET
+        unit_minor: *id008
+        rate_basis_points:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        rounding:
+          type: string
+          enum:
+          - FLOOR
+          - HALF_UP
+          - CEIL
+        include_free:
+          type: boolean
+        refund_treatment:
+          type: string
+          enum:
+          - ADJUST_AFTER_CLOSE
+          - EXCLUDE_BEFORE_CLOSE
+      required:
+      - valid_from
+      - valid_to
+      - basis
+      - rounding
+      - include_free
+      - refund_treatment
+      additionalProperties: false
+    NotificationTemplateCreate:
+      type: object
+      properties:
+        key:
+          type: string
+          minLength: 1
+          maxLength: 80
+        locale:
+          type: string
+          enum:
+          - ja
+          - en
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      required:
+      - key
+      - locale
+      - body
+      additionalProperties: false
+    ProvisionalImport:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            properties:
+              local_operation_id: *id003
+              device_time: *id007
+              reception_name:
+                type: string
+                minLength: 1
+                maxLength: 100
+              quantity: *id005
+              reason:
+                type: string
+                minLength: 1
+                maxLength: 500
+              visit_id: *id006
+            required:
+            - local_operation_id
+            - device_time
+            - reception_name
+            - quantity
+            - reason
+            additionalProperties: false
+          minItems: 1
+          maxItems: 500
+      required:
+      - records
+      additionalProperties: false
+    MembershipSummaryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipSummary'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+      additionalProperties: false
+    DeviceSummaryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceSummary'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+      additionalProperties: false
+    EventSummaryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventSummary'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+      additionalProperties: false
+    CustomerSummaryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerSummary'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+      additionalProperties: false
+    VisitSummaryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisitSummary'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+      additionalProperties: false
+    ApprovalSummaryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApprovalSummary'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+      additionalProperties: false
+    BookingSummaryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingSummary'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+      additionalProperties: false
+    ResourceSummary:
+      type: object
+      properties:
+        id: *id003
+        version: *id005
+        label: *id002
+        status: *id002
+      required:
+      - id
+      - version
+      - status
+      additionalProperties: false
+    ResourcePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceSummary'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+      additionalProperties: false
+    Metrics:
+      type: object
+      properties:
+        event_id: *id003
+        first_entries:
+          type: integer
+          minimum: 0
+        present_count:
+          type: integer
+        present_is_estimate:
+          type: boolean
+        admission_sales_minor:
+          type: integer
+        vip_sales_minor:
+          type: integer
+        in_venue_sales_minor:
+          type:
+          - integer
+          - 'null'
+        currency: *id002
+        provisional:
+          type: boolean
+      required:
+      - event_id
+      - first_entries
+      - present_count
+      - present_is_estimate
+      - admission_sales_minor
+      - vip_sales_minor
+      - in_venue_sales_minor
+      - currency
+      - provisional
+      additionalProperties: false
+    PermitSummary:
+      type: object
+      properties:
+        id: *id003
+        version: *id005
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - REVOKED
+        document:
+          $ref: '#/components/schemas/PermitDocument'
+      required:
+      - id
+      - version
+      - status
+      - document
+      additionalProperties: false
+    PermitSummaryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermitSummary'
+        next_cursor:
+          type:
+          - string
+          - 'null'
+      required:
+      - items
+      - next_cursor
+      additionalProperties: false
+    PolicySummary:
+      type: object
+      properties:
+        id: *id003
+        version: *id005
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - PUBLISHED
+          - SUPERSEDED
+        document:
+          $ref: '#/components/schemas/PolicyDocument'
+      required:
+      - id
+      - version
+      - status
+      - document
+      additionalProperties: false
+    PermitPreview:
+      type: object
+      properties:
+        expected_version: *id005
+        apply_mode:
+          type: string
+          enum:
+          - NEW_ONLY
+          - REASSESS_UNENTERED
+      required:
+      - expected_version
+      - apply_mode
+      additionalProperties: false
+    PinReset:
+      type: object
+      properties:
+        expected_membership_version: *id005
+        new_pin:
+          type: string
+          pattern: ^[0-9]{6,12}$
+          writeOnly: true
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - expected_membership_version
+      - new_pin
+      - reason
+      additionalProperties: false
+    OwnPerformance:
+      type: object
+      properties:
+        event_id: *id003
+        referrer_membership_id: *id003
+        registered_count:
+          type: integer
+          minimum: 0
+        first_entries:
+          type: integer
+          minimum: 0
+        admission_sales_minor:
+          type: integer
+        vip_sales_minor:
+          type:
+          - integer
+          - 'null'
+        in_venue_sales_minor:
+          type:
+          - integer
+          - 'null'
+        reward_estimate_minor:
+          type:
+          - integer
+          - 'null'
+        currency: *id002
+        provisional:
+          type: boolean
+      required:
+      - event_id
+      - referrer_membership_id
+      - registered_count
+      - first_entries
+      - admission_sales_minor
+      - vip_sales_minor
+      - in_venue_sales_minor
+      - reward_estimate_minor
+      - currency
+      - provisional
+      additionalProperties: false
+    PublicBookingCreate:
+      type: object
+      properties:
+        reception_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        table_ids:
+          type: array
+          items: *id003
+          minItems: 1
+          uniqueItems: true
+        party_count: *id005
+        starts_at: *id007
+        ends_at: *id007
+        accepted_policy_version: *id005
+      required:
+      - reception_name
+      - email
+      - table_ids
+      - party_count
+      - starts_at
+      - ends_at
+      - accepted_policy_version
+      additionalProperties: false
+  responses:
+    Problem:
+      description: 構造化エラー。detailsで個人情報・内部SQLを漏らさない。
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

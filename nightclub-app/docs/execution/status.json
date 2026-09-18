@@ -1,0 +1,63 @@
+{
+  "input_version": "Nightclub v4.0 (2026-09-15) / SWE2_MASTER_PROMPT 1.0",
+  "package_root": "/home/kokoro/projects/clients/promoter/Nightclub_SWE2_Handoff_20260916/Nightclub_v4_Development_Package",
+  "package_manifest": "90 files sha256 all-match (2026-09-16)",
+  "app_root": "/home/kokoro/projects/clients/promoter/nightclub-app",
+  "current_release": "R1 verified; R2/R3 internal foundations verified",
+  "current_epic": "R1 全体（EP01-23）— API/PWA/worker/試験が通しで稼働",
+  "phase": "R1 verified + R2(EP24/25)/R3(EP26/27) 内製範囲実装・検証済み",
+  "completed_features": [
+    "EP01-04: tenants/stores/users/memberships/roles/permissions, dev-issuer login, invitations, memberships suspend, operator PIN (argon2id), device enrollment/pairing, operator sessions with epoch-based replacement + X-Operator-Context",
+    "EP05-08: events + policy versions (publish gate), customers + name/kana search (same-name preserved), visits + admission segments + price-rule adjudication",
+    "EP09-11: approval requests/decisions (first-decision-wins, entrance regular approval w/o absence/wait/arrival conditions), customer-checks (explicit identity), entries (partial admission, quota hold/consume), entry passes (exit/re-entry), corrections",
+    "EP12,19-21: snapshot/changes/sync-ack + SSE stream, outbox + worker (publish/notification fan-out/expiry sweep), audit logs (append-only)",
+    "EP13-18 基盤: floor-maps/tables, VIP bookings (decision/checkout/move/cancel), orders/payments/refunds/settlements, permits, reward-rules, metrics, my-performance",
+    "EP24/25 (R2 内製範囲): platform_operators, plans, tenant_subscriptions(trial/active/past_due/suspend/cancel), billing_invoices(issue/paid/failed/void), tenant_deletion_requests(schedule/cancel), tenant_onboarding items, usage 集計, store settings PATCH(name/timezone/currency)",
+    "EP26 (R3): ticket_products(販売期間/数量/per-order上限), ticket_orders+payments連携, ticket_instances(単方向トークン・hashのみ保持), 入口 redeem→visit+TICKETセグメント+入場済み, 取消→VOID+refund REQUESTED",
+    "EP27 (R3): products(BOTTLE/ITEM/PACKAGE), stock_movements(append-only台帳), POS orders(行ロックで売切防止・sales_orders/payments連携), bottle_keeps(OPEN/FINISHED/DISCARDED)",
+    "EP25: export_jobs(visits/payments/audit CSV) + worker 実行 (QUEUED→READY, object_key, 24h expiry, ダウンロード)"
+  ],
+  "next_tasks": [
+    "R2 残: 実課金接続(D-10), tenant import/migration ジョブ実装, branding, 削除実行job",
+    "R3 残: チケットQR表示UI, 外部PSP決済(B-01), private event 詳細",
+    "R4: 3Dフロアマップ, 需要予測, CRM, 高度リワード, 外部会計/POS連携, 多言語/多通貨",
+    "本番化残: 実OIDC(B-02), PSP(B-01), 実機受入(B-03), 復元訓練(B-04)",
+    "PWA拡充: platform console UI, ticket/POS UI, admin policy編集・VIP・会計UI"
+  ],
+  "blocking_decisions": [
+    "D-05",
+    "D-09",
+    "D-10",
+    "D-11"
+  ],
+  "blockers_ref": "docs/execution/blockers.md",
+  "last_verified_commit": null,
+  "commands": {
+    "verify": "pnpm verify  (lint + test:unit + test:db + test:api)",
+    "e2e": "pnpm test:e2e",
+    "openapi": "pnpm openapi:lint",
+    "devdb": "pnpm devdb:start | stop | status",
+    "db": "pnpm db:reset && pnpm db:seed",
+    "dev": "pnpm dev:api / pnpm dev:worker / pnpm dev:web"
+  },
+  "evidence": {
+    "manifest_check": "evidence/phase0_manifest.txt",
+    "validate_package": "evidence/phase0_validate_package.txt",
+    "reference_checks": "evidence/phase0_reference_checks.txt",
+    "ddl_apply": "evidence/phase0_ddl_apply.log",
+    "r1_verify": "evidence/r1_verify_20260917.txt  (unit 9 / db 7 / api 16 all pass)",
+    "r1_e2e": "evidence/r1_e2e_20260917.txt  (playwright 3/3 pass)",
+    "openapi_lint": "spec/current/openapi.yaml — redocly valid (2 unused-component warnings, 原本由来)",
+    "r2r3_verify": "evidence/r2r3_verify_20260917.txt  (total 50 tests: unit 9 / db 7 / api 34 / e2e 3 / build+openapi ok / worker export verified)"
+  },
+  "environment": {
+    "node": "v24.19.0",
+    "pnpm": "11.22.0",
+    "python": "3.12.3",
+    "uv": "0.10.6",
+    "postgres": "16.2 (pgserver bundled binaries + btree_gist/pg_trgm built from contrib source)",
+    "docker": "not available",
+    "sudo": "not available",
+    "playwright_browsers": "chromium-headless-shell v1243 (pw 1.63.0)"
+  }
+}

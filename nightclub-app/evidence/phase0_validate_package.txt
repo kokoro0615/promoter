@@ -1,0 +1,7 @@
+PASS JSON_YAML_PARSE 14 JSON/YAML parsed
+PASS JSON_SCHEMA_EXAMPLES 4 schemas and example instances valid
+PASS OPENAPI_INTERNAL_CONTRACT 72 paths / 78 operations / 93 component schemas; internal references and example embedding checked (not a full OpenAPI product validator)
+PASS MODEL_DDL_DICTIONARY_ER_STATIC 67 tables / 817 columns / 287 foreign keys; names, target keys, scope columns, dictionary/DDL/ER counts matched. SQL execution NOT_RUN
+PASS TRACEABILITY 143 inherited IDs / 145 detailed requirements / 104 acceptance cases / all acceptance NOT_RUN
+PASS MERMAID_RECORDED_RESULTS 16 Mermaid sources parsed and rendered by local Mermaid engine; results are from the generation run
+PASS LINKS_AND_BASELINE 19 local links and original v3 SHA-256 checked

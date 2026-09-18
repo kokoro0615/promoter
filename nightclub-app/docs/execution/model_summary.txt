@@ -1,0 +1,486 @@
+== tenants [global]
+  id:uuid*, name:text*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+== app_users [global]
+  id:uuid*, display_name:text*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+== external_identities [global]
+  id:uuid*, user_id:uuid*, issuer:text*, client_id:text*, subject:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['issuer', 'client_id', 'subject']]
+  FK ['user_id'] -> app_users(['id'])
+== auth_sessions [global]
+  id:uuid*, user_id:uuid*, token_hash:text*, expires_at:timestamptz*, revoked_at:timestamptz, step_up_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['token_hash']]
+  FK ['user_id'] -> app_users(['id'])
+== stores [tenant]
+  id:uuid*, tenant_id:uuid*, name:text*, timezone:text*, currency:char(3)*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+== memberships [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, user_id:uuid*, display_name:text*, status:text*, valid_from:timestamptz*, valid_to:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'user_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['user_id'] -> app_users(['id'])
+== roles [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, role_key:text*, name:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'role_key']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+== role_permissions [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, role_id:uuid*, permission_key:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'role_id', 'permission_key']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'role_id'] -> roles(['tenant_id', 'store_id', 'id'])
+== membership_roles [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, membership_id:uuid*, role_id:uuid*, granted_by:uuid*, expires_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'membership_id', 'role_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'role_id'] -> roles(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'granted_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== invitation_tokens [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, token_hash:text*, invite_target:text*, role_id:uuid*, issued_by:uuid*, expires_at:timestamptz*, used_at:timestamptz, used_by:uuid, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['token_hash']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'role_id'] -> roles(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'issued_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['used_by'] -> app_users(['id'])
+== events [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, name:text*, opens_at:timestamptz*, closes_at:timestamptz*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+== event_assignments [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, membership_id:uuid*, assignment_kind:text*, starts_at:timestamptz*, ends_at:timestamptz*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'membership_id', 'assignment_kind']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+== devices [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, label:text*, status:text*, enrolled_by:uuid*, operator_epoch:bigint*, revoked_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'enrolled_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== device_enrollments [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, device_id:uuid*, code_hash:text*, issued_by:uuid*, expires_at:timestamptz*, consumed_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['code_hash']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'device_id'] -> devices(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'issued_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== device_sessions [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, device_id:uuid*, token_hash:text*, expires_at:timestamptz*, revoked_at:timestamptz, last_seen_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['token_hash'], ['tenant_id', 'store_id', 'device_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'device_id'] -> devices(['tenant_id', 'store_id', 'id'])
+== operator_credentials [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, membership_id:uuid*, pin_hash:text*, failed_attempts:integer*, locked_until:timestamptz, credential_version:integer*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'membership_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+== operator_sessions [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, device_id:uuid*, device_session_id:uuid*, membership_id:uuid*, operator_epoch:bigint*, token_hash:text*, expires_at:timestamptz*, locked_at:timestamptz, ended_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['token_hash']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'device_id'] -> devices(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'device_session_id'] -> device_sessions(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'device_id', 'device_session_id'] -> device_sessions(['tenant_id', 'store_id', 'device_id', 'id'])
+== customers [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, display_name:text*, name_key:text*, kana_key:text, regular_status:text*, masked_hint:text, contact_ciphertext:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+== customer_aliases [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, customer_id:uuid*, alias:text*, alias_key:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'customer_id', 'alias_key']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
+== operating_templates [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, name:text*, settings:jsonb*, version:integer*, created_by:uuid*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'created_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== policy_versions [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, version:integer*, status:text*, settings:jsonb*, effective_from:timestamptz*, effective_to:timestamptz*, apply_mode:text*, published_by:uuid, published_at:timestamptz, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'version']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'published_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== price_rules [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, policy_version_id:uuid*, rule_key:text*, price_kind:text*, amount_minor:bigint*, currency:char(3)*, entry_from:timestamptz*, entry_to:timestamptz*, payment_required:boolean*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'policy_version_id', 'rule_key']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'policy_version_id'] -> policy_versions(['tenant_id', 'store_id', 'event_id', 'id'])
+== permits [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, permit_key:uuid*, version:integer*, subject_kind:text*, customer_id:uuid, actor_membership_id:uuid, granted_by:uuid*, conditions:jsonb*, valid_from:timestamptz*, valid_to:timestamptz*, status:text*, supersedes_id:uuid, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'permit_key', 'version']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'actor_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'granted_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'supersedes_id'] -> permits(['tenant_id', 'store_id', 'id'])
+== referrer_profiles [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, membership_id:uuid*, stage_name:text*, categories:text[]*, contract_reference:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'membership_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+== invitation_links [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, referrer_membership_id:uuid*, token_hash:text*, expires_at:timestamptz*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['token_hash']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'referrer_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+== coupons [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, code_hash:text*, version:integer*, owner_membership_id:uuid, conditions:jsonb*, valid_from:timestamptz*, valid_to:timestamptz*, status:text*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'code_hash', 'version']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'owner_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+== visits [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, customer_id:uuid, referrer_membership_id:uuid, created_by:uuid, source:text*, reception_name:text*, name_key:text*, planned_count:integer*, arrival_status:text*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'referrer_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'created_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== visit_members [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, visit_id:uuid*, customer_id:uuid, display_name:text, member_kind:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id'] -> visits(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
+== customer_checks [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, visit_id:uuid*, customer_id:uuid*, checked_by:uuid*, operator_session_id:uuid, method:text*, note:text, valid_until:timestamptz*, revoked_at:timestamptz, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'visit_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id'] -> visits(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'checked_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'operator_session_id'] -> operator_sessions(['tenant_id', 'store_id', 'event_id', 'id'])
+== admission_segments [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, visit_id:uuid*, price_rule_id:uuid*, permit_id:uuid, required_customer_id:uuid, requested_count:integer*, authorized_count:integer*, first_entered_count:integer*, unit_amount_minor:bigint*, currency:char(3)*, status:text*, authorization_method:text, snapshot:jsonb*, version:integer*, entry_until:timestamptz*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'visit_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id'] -> visits(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'price_rule_id'] -> price_rules(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'permit_id'] -> permits(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'required_customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
+== approval_requests [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, segment_id:uuid*, requested_by:uuid*, request_version:integer*, segment_version:integer*, reason:text*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'segment_id', 'request_version']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'segment_id'] -> admission_segments(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'requested_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== approval_decisions [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, request_id:uuid*, decided_by:uuid*, operator_session_id:uuid, route:text*, decision:text*, reason:text, operation_id:uuid*, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'request_id'], ['tenant_id', 'store_id', 'operation_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'request_id'] -> approval_requests(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'decided_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'operator_session_id'] -> operator_sessions(['tenant_id', 'store_id', 'event_id', 'id'])
+== quota_buckets [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, bucket_key:text*, bucket_kind:text*, limit_mode:text*, limit_count:integer, held_count:integer*, consumed_count:integer*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'bucket_key']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+== quota_allocations [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, bucket_id:uuid*, segment_id:uuid*, held_count:integer*, consumed_count:integer*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'bucket_id', 'segment_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'bucket_id'] -> quota_buckets(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'segment_id'] -> admission_segments(['tenant_id', 'store_id', 'event_id', 'id'])
+== entry_passes [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, visit_id:uuid*, member_id:uuid, token_hash:text*, pass_kind:text*, presence:text*, expires_at:timestamptz*, revoked_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['token_hash'], ['tenant_id', 'store_id', 'event_id', 'visit_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id'] -> visits(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'member_id'] -> visit_members(['tenant_id', 'store_id', 'event_id', 'id'])
+== admission_events [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, visit_id:uuid*, segment_id:uuid*, pass_id:uuid, operator_session_id:uuid*, actor_membership_id:uuid*, customer_check_id:uuid, kind:text*, quantity:integer*, present_delta:integer*, first_entry_delta:integer*, corrects_id:uuid, operation_id:uuid*, reason:text, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'operation_id', 'segment_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id'] -> visits(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'segment_id'] -> admission_segments(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'pass_id'] -> entry_passes(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'operator_session_id'] -> operator_sessions(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'actor_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'customer_check_id'] -> customer_checks(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'corrects_id'] -> admission_events(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id', 'segment_id'] -> admission_segments(['tenant_id', 'store_id', 'event_id', 'visit_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id', 'pass_id'] -> entry_passes(['tenant_id', 'store_id', 'event_id', 'visit_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id', 'customer_check_id'] -> customer_checks(['tenant_id', 'store_id', 'event_id', 'visit_id', 'id'])
+== provisional_entries [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, device_id:uuid*, actor_membership_id:uuid*, visit_id:uuid, local_operation_id:uuid*, device_time:timestamptz*, quantity:integer*, reception_name:text*, reason:text*, status:text*, reconciled_entry_id:uuid, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'device_id', 'local_operation_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'device_id'] -> devices(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'actor_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id'] -> visits(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'reconciled_entry_id'] -> admission_events(['tenant_id', 'store_id', 'event_id', 'id'])
+== floor_maps [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, version:integer*, layout:jsonb*, status:text*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'version']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+== venue_tables [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, table_code:text*, zone:text*, capacity_min:integer*, capacity_max:integer*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'table_code']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+== bookings [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, visit_id:uuid*, customer_id:uuid, party_count:integer*, starts_at:timestamptz*, ends_at:timestamptz*, hold_expires_at:timestamptz, status:text*, admission_pricing:text*, minimum_minor:bigint*, deposit_minor:bigint*, currency:char(3)*, policy_snapshot:jsonb*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'visit_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id'] -> visits(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
+== booking_decisions [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, booking_id:uuid*, booking_version:integer*, actor_membership_id:uuid*, decision:text*, reason:text, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'booking_id', 'booking_version']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'booking_id'] -> bookings(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'actor_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+== table_allocations [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, booking_id:uuid*, table_id:uuid*, occupied_during:tstzrange*, status:text*, expires_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'booking_id'] -> bookings(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'table_id'] -> venue_tables(['tenant_id', 'store_id', 'id'])
+== sales_orders [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, kind:text*, visit_id:uuid*, booking_id:uuid, currency:char(3)*, status:text*, external_system:text, external_order_id:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'external_system', 'external_order_id'], ['tenant_id', 'store_id', 'event_id', 'id', 'currency']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id'] -> visits(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'booking_id'] -> bookings(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id', 'booking_id'] -> bookings(['tenant_id', 'store_id', 'event_id', 'visit_id', 'id'])
+== sales_lines [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, order_id:uuid*, segment_id:uuid, category:text*, line_kind:text*, description:text*, quantity:integer*, gross_minor:bigint*, tax_minor:bigint*, currency:char(3)*, adjusts_line_id:uuid, source_key:text*, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'source_key'], ['tenant_id', 'store_id', 'event_id', 'order_id', 'id', 'currency']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'order_id'] -> sales_orders(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'segment_id'] -> admission_segments(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'adjusts_line_id'] -> sales_lines(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'order_id', 'currency'] -> sales_orders(['tenant_id', 'store_id', 'event_id', 'id', 'currency'])
+== payments [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, recorded_by:uuid, operator_session_id:uuid, order_id:uuid*, method:text*, purpose:text*, amount_minor:bigint*, currency:char(3)*, status:text*, provider:text, provider_account:text, provider_reference:text, operation_id:uuid*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'operation_id'], ['provider', 'provider_account', 'provider_reference'], ['tenant_id', 'store_id', 'event_id', 'id', 'currency']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'recorded_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'operator_session_id'] -> operator_sessions(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'order_id'] -> sales_orders(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'order_id', 'currency'] -> sales_orders(['tenant_id', 'store_id', 'event_id', 'id', 'currency'])
+== payment_allocations [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, sales_line_id:uuid, payment_id:uuid*, order_id:uuid*, amount_minor:bigint*, currency:char(3)*, reverses_id:uuid, operation_id:uuid*, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'operation_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'sales_line_id'] -> sales_lines(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'payment_id'] -> payments(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'order_id'] -> sales_orders(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'reverses_id'] -> payment_allocations(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'order_id', 'currency'] -> sales_orders(['tenant_id', 'store_id', 'event_id', 'id', 'currency'])
+  FK ['tenant_id', 'store_id', 'event_id', 'payment_id', 'currency'] -> payments(['tenant_id', 'store_id', 'event_id', 'id', 'currency'])
+  FK ['tenant_id', 'store_id', 'event_id', 'order_id', 'sales_line_id', 'currency'] -> sales_lines(['tenant_id', 'store_id', 'event_id', 'order_id', 'id', 'currency'])
+== refunds [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, payment_id:uuid*, amount_minor:bigint*, currency:char(3)*, status:text*, reason:text*, requested_by:uuid*, provider_reference:text, operation_id:uuid*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'operation_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'payment_id'] -> payments(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'requested_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'payment_id', 'currency'] -> payments(['tenant_id', 'store_id', 'event_id', 'id', 'currency'])
+== payment_disputes [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, payment_id:uuid*, provider_reference:text*, amount_minor:bigint*, status:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'provider_reference']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'payment_id'] -> payments(['tenant_id', 'store_id', 'event_id', 'id'])
+== coupon_redemptions [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, coupon_id:uuid*, visit_id:uuid*, sales_line_id:uuid, status:text*, operation_id:uuid*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'operation_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'coupon_id'] -> coupons(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'visit_id'] -> visits(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'sales_line_id'] -> sales_lines(['tenant_id', 'store_id', 'event_id', 'id'])
+== sales_attributions [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, sales_line_id:uuid*, referrer_membership_id:uuid*, basis_points:integer*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'sales_line_id', 'referrer_membership_id', 'version']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'sales_line_id'] -> sales_lines(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'referrer_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+== reward_rules [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, rule_key:uuid*, version:integer*, referrer_membership_id:uuid, conditions:jsonb*, valid_from:timestamptz*, valid_to:timestamptz*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'rule_key', 'version']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'referrer_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+== settlements [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, version:integer*, status:text*, finalized_by:uuid, finalized_at:timestamptz, exception_note:text, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'version']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'finalized_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== settlement_lines [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, settlement_id:uuid*, referrer_membership_id:uuid*, reward_rule_id:uuid*, admission_event_id:uuid, sales_line_id:uuid, amount_minor:bigint*, currency:char(3)*, calculation:jsonb*, source_key:text*, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'settlement_id', 'source_key']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'settlement_id'] -> settlements(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'referrer_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'reward_rule_id'] -> reward_rules(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'admission_event_id'] -> admission_events(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'sales_line_id'] -> sales_lines(['tenant_id', 'store_id', 'event_id', 'id'])
+== reward_adjustments [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, settlement_line_id:uuid*, amount_minor:bigint*, reason:text*, created_by:uuid*, operation_id:uuid*, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'operation_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'settlement_line_id'] -> settlement_lines(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'created_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== reward_disputes [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, settlement_line_id:uuid*, raised_by:uuid*, reason:text*, status:text*, resolution:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'settlement_line_id'] -> settlement_lines(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'raised_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== settlement_payments [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, settlement_id:uuid*, referrer_membership_id:uuid*, amount_minor:bigint*, currency:char(3)*, external_reference:text*, recorded_by:uuid*, paid_at:timestamptz*, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'external_reference']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'settlement_id'] -> settlements(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'referrer_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'recorded_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== cash_sessions [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, operator_session_id:uuid*, opening_minor:bigint*, counted_minor:bigint, closed_at:timestamptz, difference_note:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'operator_session_id'] -> operator_sessions(['tenant_id', 'store_id', 'event_id', 'id'])
+== command_receipts [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, actor_key:text*, operation_key:text*, operation_name:text*, request_hash:text*, status:text*, http_status:integer, response_body:jsonb, expires_at:timestamptz*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'actor_key', 'operation_name', 'operation_key']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+== event_stream_heads [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, last_seq:bigint*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+== outbox_events [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, stream_seq:bigint*, event_type:text*, aggregate_type:text*, aggregate_id:uuid*, aggregate_version:integer*, payload:jsonb*, trace_id:uuid*, published_at:timestamptz, attempts:integer*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'stream_seq']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+== sync_acks [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, device_id:uuid*, operator_session_id:uuid*, applied_seq:bigint*, snapshot_token_hash:text*, last_seen_at:timestamptz*, visibility:text*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'device_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'device_id'] -> devices(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'operator_session_id'] -> operator_sessions(['tenant_id', 'store_id', 'event_id', 'id'])
+== notification_templates [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, template_key:text*, locale:text*, version:integer*, body:text*, status:text*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'template_key', 'locale', 'version']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+== notification_jobs [event]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, event_id:uuid*, outbox_event_id:uuid, recipient_membership_id:uuid, recipient_customer_id:uuid, channel:text*, dedup_key:text*, status:text*, scheduled_at:timestamptz*, attempts:integer*, provider_reference:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'event_id', 'id'], ['tenant_id', 'store_id', 'dedup_key']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id'] -> events(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'event_id', 'outbox_event_id'] -> outbox_events(['tenant_id', 'store_id', 'event_id', 'id'])
+  FK ['tenant_id', 'store_id', 'recipient_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'recipient_customer_id'] -> customers(['tenant_id', 'store_id', 'id'])
+== integration_events [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, provider:text*, provider_account:text*, external_event_id:text*, payload_hash:text*, payload:jsonb*, status:text*, attempts:integer*, error_code:text, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['provider', 'provider_account', 'external_event_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+== audit_logs [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, actor_membership_id:uuid, device_id:uuid, operator_session_id:uuid, action:text*, target_type:text*, target_id:uuid*, before_version:integer, after_version:integer, changes:jsonb*, reason:text, trace_id:uuid*, created_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'actor_membership_id'] -> memberships(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'device_id'] -> devices(['tenant_id', 'store_id', 'id'])
+  FK ['tenant_id', 'store_id', 'operator_session_id'] -> operator_sessions(['tenant_id', 'store_id', 'id'])
+== export_jobs [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, requested_by:uuid*, report_kind:text*, filters:jsonb*, format:text*, status:text*, object_key:text, expires_at:timestamptz, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'requested_by'] -> memberships(['tenant_id', 'store_id', 'id'])
+== import_jobs [store]
+  id:uuid*, tenant_id:uuid*, store_id:uuid*, requested_by:uuid*, source_system:text*, file_hash:text*, status:text*, mapping:jsonb*, validation_errors:jsonb*, operation_id:uuid*, version:integer*, created_at:timestamptz*, updated_at:timestamptz*
+  UQ: [['tenant_id', 'store_id', 'id'], ['tenant_id', 'store_id', 'operation_id']]
+  FK ['tenant_id'] -> tenants(['id'])
+  FK ['tenant_id', 'store_id'] -> stores(['tenant_id', 'id'])
+  FK ['tenant_id', 'store_id', 'requested_by'] -> memberships(['tenant_id', 'store_id', 'id'])

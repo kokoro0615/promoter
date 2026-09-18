@@ -1,0 +1,41 @@
+:root {
+  color-scheme: dark;
+  --bg: #101014; --panel: #18181f; --line: #2a2a35;
+  --text: #ececf1; --dim: #9a9aa8; --accent: #6ea8fe;
+  --ok: #4ecf8f; --warn: #f0b95c; --err: #ef6a6a;
+  font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+button {
+  font: inherit; background: var(--accent); color: #0b1220;
+  border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer;
+}
+button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+button.danger { background: var(--err); }
+input, select {
+  font: inherit; background: #0c0c11; color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; width: 100%;
+}
+nav {
+  display: flex; gap: 4px; padding: 10px 14px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--bg); z-index: 5; flex-wrap: wrap;
+}
+nav a { color: var(--dim); text-decoration: none; padding: 8px 12px; border-radius: 8px; }
+nav a.active { color: var(--text); background: var(--panel); }
+main { max-width: 960px; margin: 0 auto; padding: 18px 14px 80px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; }
+.dim { color: var(--dim); font-size: 13px; }
+.pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); }
+.pill.AUTHORIZED, .pill.APPROVED, .pill.SUCCEEDED, .pill.PAID { color: var(--ok); border-color: var(--ok); }
+.pill.PENDING, .pill.PROCESSING { color: var(--warn); border-color: var(--warn); }
+.pill.REJECTED, .pill.CANCELLED, .pill.EXPIRED { color: var(--err); border-color: var(--err); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+.list-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+.err { color: var(--err); font-size: 13px; white-space: pre-wrap; }
+.ok { color: var(--ok); font-size: 13px; }
+h1 { font-size: 20px; } h2 { font-size: 16px; color: var(--dim); font-weight: 600; }
+.grid { display: grid; gap: 10px; }

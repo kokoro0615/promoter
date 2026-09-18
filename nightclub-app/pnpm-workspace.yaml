@@ -1,0 +1,8 @@
+allowBuilds:
+  argon2: true
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@redocly/cli@2.53.2'
+  - '@vitest/mocker@5.0.1'
+  - '@vitest/spy@5.0.1'
+  - vitest@5.0.1

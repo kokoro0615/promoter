@@ -1,0 +1,10 @@
+[WebServer] $ tsx watch src/server/index.ts
+[WebServer] $ vite
+
+Running 3 tests using 1 worker
+
+  ✓  1 tests/e2e/smoke.spec.ts:6:1 › login and promoter flow renders (1.7s)
+  ✓  2 tests/e2e/smoke.spec.ts:22:1 › admin sees events and audit log (815ms)
+  ✓  3 tests/e2e/smoke.spec.ts:33:1 › unpaired kiosk asks for pairing code (578ms)
+
+  3 passed (8.2s)
