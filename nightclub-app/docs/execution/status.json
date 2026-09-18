@@ -48,7 +48,7 @@
     "D-11"
   ],
   "blockers_ref": "docs/execution/blockers.md",
-  "last_verified_commit": "93a4ec2",
+  "last_verified_commit": "8cfd8f6",
   "commands": {
     "verify": "pnpm verify  (lint + test:unit + test:db + test:api)",
     "e2e": "pnpm test:e2e",

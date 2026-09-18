@@ -16,7 +16,7 @@ Branch: `feat/v5-jp-completion` (repo root `/home/kokoro/projects/clients/promot
 State of record: `docs/execution/status.json`, `docs/execution/findings.json`,
 `docs/execution/requirements_registry.json`, `docs/execution/blockers.md`.
 
-## Current state (verified 2026-09-19 @ PHASE9_COMMIT)
+## Current state (verified 2026-09-19 @ 8cfd8f6)
 
 - unit 9 / db 7 / api 114 (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35
   authalt:11 publicbook:3 concurrency:3 parity:7) / e2e 3 / vite build — all pass
@@ -36,7 +36,7 @@ State of record: `docs/execution/status.json`, `docs/execution/findings.json`,
   admin 12 tabs, platform console, public booking form (e2e 3)
 - 5 `292c772` — concurrency races (stock oversell, same-key parallel,
   approval first-wins) + phase-4 read-field assertions (api 107)
-- 9 `PHASE9_COMMIT` — contract parity: segment replace, visit attribution,
+- 9 `8cfd8f6` — contract parity: segment replace, visit attribution,
   order lines, templates, coupons, notification-templates, imports +
   ER/api_parity generators + basis_points 0→10000 fix (api 114)
 
