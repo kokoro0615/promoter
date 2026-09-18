@@ -101,8 +101,17 @@ export default async function customerRoutes(app: FastifyInstance) {
           WHERE bk.tenant_id=$1 AND bk.store_id=$2 AND bk.customer_id=$3
             AND bk.status='OPEN' ORDER BY bk.expires_at`,
         [member.tenantId, storeId, customerId]);
+      const tags = await c.query(
+        `SELECT ct.id AS tag_id, ct.tag_key
+           FROM nightclub.customer_tag_assignments a
+           JOIN nightclub.customer_tags ct
+             ON ct.tenant_id=a.tenant_id AND ct.store_id=a.store_id AND ct.id=a.tag_id
+          WHERE a.tenant_id=$1 AND a.store_id=$2 AND a.customer_id=$3
+          ORDER BY ct.tag_key`,
+        [member.tenantId, storeId, customerId]);
       return {
         customer: r.rows[0], aliases: aliases.rows.map((a) => a.alias),
+        tags: tags.rows,
         recent_visits: visits.rows, open_bottle_keeps: keeps.rows,
       };
     });

@@ -249,13 +249,18 @@ export default async function opsRoutes(app: FastifyInstance) {
     const q = req.query as { target_type?: string; target_id?: string; limit?: string };
     return withCtx(gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId), async (c) => {
       const r = await c.query(
-        `SELECT id, actor_membership_id, device_id, operator_session_id,
-                action, target_type, target_id, changes, reason, trace_id, created_at
-           FROM nightclub.audit_logs
-          WHERE tenant_id=$1 AND store_id=$2
-            AND ($3::text IS NULL OR target_type=$3)
-            AND ($4::uuid IS NULL OR target_id=$4)
-          ORDER BY created_at DESC LIMIT $5`,
+        `SELECT al.id, al.actor_membership_id, al.device_id, al.operator_session_id,
+                al.action, al.target_type, al.target_id, al.changes, al.reason,
+                al.trace_id, al.created_at,
+                m.display_name AS actor_display
+           FROM nightclub.audit_logs al
+           LEFT JOIN nightclub.memberships m
+             ON m.tenant_id=al.tenant_id AND m.store_id=al.store_id
+            AND m.id=al.actor_membership_id
+          WHERE al.tenant_id=$1 AND al.store_id=$2
+            AND ($3::text IS NULL OR al.target_type=$3)
+            AND ($4::uuid IS NULL OR al.target_id=$4)
+          ORDER BY al.created_at DESC LIMIT $5`,
         [member.tenantId, storeId, q.target_type ?? null,
          q.target_id ?? null, Math.min(Number(q.limit) || 100, 500)]);
       return { items: r.rows };

@@ -125,7 +125,8 @@ export default async function vipRoutes(app: FastifyInstance) {
       const r = await c.query(
         `SELECT b.id, b.version, b.visit_id, b.customer_id, b.party_count,
                 b.starts_at, b.ends_at, b.status, b.admission_pricing,
-                b.minimum_minor, b.deposit_minor, b.currency, v.reception_name,
+                b.minimum_minor, b.deposit_minor, b.currency, b.contact,
+                v.reception_name,
                 (SELECT array_agg(t.table_code) FROM nightclub.table_allocations ta
                    JOIN nightclub.venue_tables t
                      ON t.tenant_id=ta.tenant_id AND t.store_id=ta.store_id AND t.id=ta.table_id
@@ -216,6 +217,122 @@ export default async function vipRoutes(app: FastifyInstance) {
           traceId: req.traceId,
         });
         return { httpStatus: 201, body: { booking_id: bookingId, status, trace_id: req.traceId } };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- public booking pages (admin side; public read/post is routes/public.ts)
+  app.get('/stores/:storeId/events/:eventId/booking-pages', {
+    schema: { params: eventParams },
+  }, async (req) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
+    const c0 = await caller(req, storeId, 'booking.manage', eventId);
+    return withCtx(c0.g, async (c) => ({
+      items: (await c.query(
+        `SELECT id, slug, status, title, message, collect_phone, max_party,
+                version, created_at
+           FROM nightclub.booking_pages
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+          ORDER BY created_at`,
+        [c0.g.tenantId, storeId, eventId])).rows,
+    }));
+  });
+
+  app.post('/stores/:storeId/events/:eventId/booking-pages', {
+    schema: {
+      params: eventParams,
+      body: body({
+        slug: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{2,62}$' },
+        title: str(200), message: str(2000),
+        collect_phone: { type: 'boolean' },
+        max_party: { type: 'integer', minimum: 1, maximum: 200 },
+      }, ['title']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
+    const c0 = await caller(req, storeId, 'booking.manage', eventId);
+    const b = req.body as {
+      slug?: string; title?: string; message?: string;
+      collect_phone?: boolean; max_party?: number;
+    };
+    if (!b?.title) throw E.invalid('title required');
+    const slug = b.slug ?? `bp-${uuid().slice(0, 12)}`;
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'booking_page.create', key: idemKey(req), body: b,
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        let ins;
+        try {
+          ins = await c.query(
+            `INSERT INTO nightclub.booking_pages
+               (tenant_id, store_id, event_id, slug, title, message,
+                collect_phone, max_party)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, slug`,
+            [g.tenantId, g.storeId, eventId, slug, b.title, b.message ?? null,
+             b.collect_phone ?? true, b.max_party ?? 10]);
+        } catch (e) {
+          if ((e as { code?: string }).code === '23505') {
+            throw E.conflict('slug already in use');
+          }
+          throw e;
+        }
+        await audit(c, g, {
+          action: 'booking_page.create', targetType: 'booking_pages',
+          targetId: ins.rows[0].id, changes: { slug }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            page_id: ins.rows[0].id, slug: ins.rows[0].slug,
+            url: `/#/book/${ins.rows[0].slug}`, trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  app.post('/stores/:storeId/events/:eventId/booking-pages/:pageId/status', {
+    schema: {
+      params: params({
+        storeId: sUuid, eventId: sUuid, pageId: sUuid,
+      }),
+      body: body({
+        status: { type: 'string', enum: ['OPEN', 'CLOSED'] },
+        expected_version: version,
+      }, ['status']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, pageId } = req.params as { storeId: string; eventId: string; pageId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
+    const c0 = await caller(req, storeId, 'booking.manage', eventId);
+    const b = req.body as { status?: string; expected_version?: number };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'booking_page.status', key: idemKey(req), body: { ...b, pageId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const r = await c.query(
+          `UPDATE nightclub.booking_pages SET status=$5, version=version+1,
+              updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+              AND version=$6 RETURNING version`,
+          [g.tenantId, g.storeId, eventId, pageId, b.status,
+           b.expected_version ?? -1]);
+        if (!r.rows[0]) throw E.versionConflict();
+        await audit(c, g, {
+          action: 'booking_page.status', targetType: 'booking_pages',
+          targetId: pageId, changes: { status: b.status }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { page_id: pageId, status: b.status, version: r.rows[0].version, trace_id: req.traceId },
+        };
       },
     }));
     reply.code(res.httpStatus);

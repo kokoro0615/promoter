@@ -27,6 +27,7 @@ test('admin sees events and audit log', async ({ page }) => {
 
   await page.getByRole('link', { name: 'Admin' }).click();
   await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
+  await page.getByRole('button', { name: 'Audit' }).click();
   await expect(page.getByRole('heading', { name: 'Audit log' })).toBeVisible();
 });
 
