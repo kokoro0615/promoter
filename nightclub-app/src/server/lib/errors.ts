@@ -56,6 +56,8 @@ export const E = {
     new AppError('SNAPSHOT_REQUIRED', 410, 'snapshot required'),
   rateLimited: () =>
     new AppError('RATE_LIMITED', 429, 'rate limited', { retryable: true }),
+  crossOriginForbidden: () =>
+    new AppError('CROSS_ORIGIN_FORBIDDEN', 403, 'cross-origin request forbidden'),
   unavailable: () =>
     new AppError('SERVICE_UNAVAILABLE', 503, 'service unavailable', { retryable: true }),
   paymentPending: () =>

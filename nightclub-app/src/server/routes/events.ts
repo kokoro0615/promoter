@@ -7,6 +7,10 @@ import { E } from '../lib/errors.js';
 import { canonicalJson } from '../lib/crypto.js';
 import { audit, emit, publishedPolicy, type Policy } from '../lib/tx.js';
 import {
+  body, eventChild, eventParams, isoTs, params, query, storeParam, str,
+  uuid as sUuid, version,
+} from '../lib/schemas.js';
+import {
   requirePersonal, requirePerm, requireOperator, requireDevice, gucPersonal, gucDevice, gucOperator,
 } from '../lib/ctx.js';
 
@@ -63,7 +67,7 @@ export function validatePolicy(
 }
 
 export default async function eventRoutes(app: FastifyInstance) {
-  app.get('/stores/:storeId/events', async (req) => {
+  app.get('/stores/:storeId/events', { schema: { params: storeParam } }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'event.read');
@@ -76,7 +80,15 @@ export default async function eventRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/stores/:storeId/events', async (req, reply) => {
+  app.post('/stores/:storeId/events', {
+    schema: {
+      params: storeParam,
+      body: body({
+        name: str(200), opens_at: isoTs, closes_at: isoTs,
+        is_private: { type: 'boolean' },
+      }, ['name', 'opens_at', 'closes_at']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'event.manage');
@@ -99,7 +111,25 @@ export default async function eventRoutes(app: FastifyInstance) {
   });
 
   // Day-of staffing: full replace of an event's assignments.
-  app.put('/stores/:storeId/events/:eventId/assignments', async (req) => {
+  app.put('/stores/:storeId/events/:eventId/assignments', {
+    schema: {
+      params: eventParams,
+      body: body({
+        assignments: {
+          type: 'array', maxItems: 200,
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: {
+              membership_id: sUuid,
+              assignment_kind: { type: 'string', enum: ASSIGNMENT_KINDS },
+              starts_at: isoTs, ends_at: isoTs,
+            },
+            required: ['membership_id', 'assignment_kind'],
+          },
+        },
+      }, ['assignments']),
+    },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'event.manage');
@@ -147,7 +177,7 @@ export default async function eventRoutes(app: FastifyInstance) {
   });
 
   // Current published policy.
-  app.get('/stores/:storeId/events/:eventId/policy', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/policy', { schema: { params: eventParams } }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string };
     const op = await req.auth.operator().catch(() => null);
     if (op && op.storeId === storeId && op.eventId === eventId) {
@@ -167,7 +197,15 @@ export default async function eventRoutes(app: FastifyInstance) {
   });
 
   // Create a draft policy version.
-  app.post('/stores/:storeId/events/:eventId/policy-versions', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/policy-versions', {
+    schema: {
+      params: eventParams,
+      body: body({
+        expected_event_version: version,
+        policy: { type: 'object' },
+      }, ['expected_event_version', 'policy']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'policy.manage');
@@ -204,7 +242,9 @@ export default async function eventRoutes(app: FastifyInstance) {
   });
 
   // Preview: business validation + impact check -> signed token for publish.
-  app.post('/stores/:storeId/events/:eventId/policy-versions/:policyId/preview', async (req) => {
+  app.post('/stores/:storeId/events/:eventId/policy-versions/:policyId/preview', {
+    schema: { params: eventChild('policyId') },
+  }, async (req) => {
     const { storeId, eventId, policyId } = req.params as { storeId: string; eventId: string; policyId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'policy.manage');
@@ -244,7 +284,15 @@ export default async function eventRoutes(app: FastifyInstance) {
   });
 
   // Publish: requires preview token + expected event version.
-  app.post('/stores/:storeId/events/:eventId/policy-versions/:policyId/publish', async (req) => {
+  app.post('/stores/:storeId/events/:eventId/policy-versions/:policyId/publish', {
+    schema: {
+      params: eventChild('policyId'),
+      body: body({
+        expected_version: version, preview_token: str(500),
+        apply_mode: { type: 'string', enum: ['NEW_ONLY', 'REASSESS_UNENTERED'] },
+      }, ['expected_version', 'preview_token']),
+    },
+  }, async (req) => {
     const { storeId, eventId, policyId } = req.params as { storeId: string; eventId: string; policyId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'policy.manage');
@@ -365,7 +413,12 @@ export default async function eventRoutes(app: FastifyInstance) {
   });
 
   // Publish the event itself (open for registration/entrance work).
-  app.post('/stores/:storeId/events/:eventId/publish', async (req) => {
+  app.post('/stores/:storeId/events/:eventId/publish', {
+    schema: {
+      params: eventParams,
+      body: body({ expected_version: version }),
+    },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'event.manage');
@@ -399,7 +452,9 @@ export default async function eventRoutes(app: FastifyInstance) {
   });
 
   // Operator-facing event info (kiosk header).
-  app.get('/device/event', async (req) => {
+  app.get('/device/event', {
+    schema: { querystring: query({ event_id: sUuid }, ['event_id']) },
+  }, async (req) => {
     const d = await requireDevice(req);
     const q = req.query as { event_id?: string };
     if (!q.event_id) throw E.invalid('event_id required');

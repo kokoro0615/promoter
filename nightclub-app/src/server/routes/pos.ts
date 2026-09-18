@@ -7,6 +7,10 @@ import { E } from '../lib/errors.js';
 import { uuid } from '../lib/crypto.js';
 import { audit, emit, idemKey, withReceipt } from '../lib/tx.js';
 import {
+  body, eventParams, int, isoTs, minor, params, query, storeParam, str,
+  uuid as sUuid, version,
+} from '../lib/schemas.js';
+import {
   requirePersonal, requireOperator, requirePerm,
   type MemberCtx, type OperatorCtx, type PersonalCtx, gucPersonal, gucOperator,
 } from '../lib/ctx.js';
@@ -72,7 +76,18 @@ async function applyMovement(
 
 export default async function posRoutes(app: FastifyInstance) {
   // ---- products --------------------------------------------------------------
-  app.post('/stores/:storeId/products', async (req, reply) => {
+  app.post('/stores/:storeId/products', {
+    schema: {
+      params: storeParam,
+      body: body({
+        sku: str(64), name: str(200),
+        kind: { type: 'string', enum: ['BOTTLE', 'ITEM', 'PACKAGE'] },
+        price_minor: minor, currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+        stock_tracked: { type: 'boolean' },
+        initial_stock: { type: 'integer', minimum: 0 },
+      }, ['sku', 'name', 'kind', 'price_minor']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as P;
     const c0 = await caller(req, storeId, null, 'policy.manage');
     const b = req.body as {
@@ -120,7 +135,9 @@ export default async function posRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.get('/stores/:storeId/products', async (req) => {
+  app.get('/stores/:storeId/products', {
+    schema: { params: storeParam },
+  }, async (req) => {
     const { storeId } = req.params as P;
     const c0 = await caller(req, storeId, null, 'sales.read');
     return withCtx(c0.g, async (c) => ({
@@ -135,7 +152,15 @@ export default async function posRoutes(app: FastifyInstance) {
 
   // Stock adjustment (restock / write-off / correction). SALE movements are
   // created only by POS orders.
-  app.post('/stores/:storeId/products/:productId/stock', async (req, reply) => {
+  app.post('/stores/:storeId/products/:productId/stock', {
+    schema: {
+      params: params({ storeId: sUuid, productId: sUuid }),
+      body: body({
+        kind: { type: 'string', enum: ['IN', 'OUT', 'ADJUST'] },
+        quantity: int, ref: str(200),
+      }, ['kind', 'quantity']),
+    },
+  }, async (req, reply) => {
     const { storeId, productId } = req.params as P;
     const c0 = await caller(req, storeId, null, 'sales.record');
     const b = req.body as { kind?: string; quantity?: number; ref?: string };
@@ -165,7 +190,9 @@ export default async function posRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.get('/stores/:storeId/products/:productId/movements', async (req) => {
+  app.get('/stores/:storeId/products/:productId/movements', {
+    schema: { params: params({ storeId: sUuid, productId: sUuid }) },
+  }, async (req) => {
     const { storeId, productId } = req.params as P;
     const c0 = await caller(req, storeId, null, 'sales.read');
     return withCtx(c0.g, async (c) => ({
@@ -180,7 +207,26 @@ export default async function posRoutes(app: FastifyInstance) {
   // ---- POS order ---------------------------------------------------------------
   // Atomic: product rows locked, stock checked, order+lines+payment+SALE
   // movements in one transaction.
-  app.post('/stores/:storeId/events/:eventId/pos/orders', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/pos/orders', {
+    schema: {
+      params: eventParams,
+      body: body({
+        lines: {
+          type: 'array', minItems: 1, maxItems: 100,
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: {
+              product_id: sUuid,
+              quantity: { type: 'integer', minimum: 1, maximum: 1000 },
+            },
+            required: ['product_id', 'quantity'],
+          },
+        },
+        method: { type: 'string', enum: ['CASH', 'EXTERNAL_TERMINAL'] },
+        visit_id: { type: ['string', 'null'], format: 'uuid' },
+      }, ['lines', 'method']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as P;
     const c0 = await caller(req, storeId, eventId, 'sales.record');
     const b = req.body as {
@@ -285,7 +331,15 @@ export default async function posRoutes(app: FastifyInstance) {
   });
 
   // ---- bottle keeps -------------------------------------------------------------
-  app.post('/stores/:storeId/bottle-keeps', async (req, reply) => {
+  app.post('/stores/:storeId/bottle-keeps', {
+    schema: {
+      params: storeParam,
+      body: body({
+        customer_id: sUuid, product_id: sUuid, label: str(200),
+        expires_at: isoTs, order_id: { type: ['string', 'null'], format: 'uuid' },
+      }, ['customer_id', 'product_id', 'label', 'expires_at']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as P;
     const c0 = await caller(req, storeId, null, 'customer.manage');
     const b = req.body as {
@@ -318,7 +372,12 @@ export default async function posRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.get('/stores/:storeId/bottle-keeps', async (req) => {
+  app.get('/stores/:storeId/bottle-keeps', {
+    schema: {
+      params: storeParam,
+      querystring: query({ customer_id: sUuid }),
+    },
+  }, async (req) => {
     const { storeId } = req.params as P;
     const c0 = await caller(req, storeId, null, 'sales.read');
     const q = req.query as { customer_id?: string };
@@ -342,7 +401,16 @@ export default async function posRoutes(app: FastifyInstance) {
     }));
   });
 
-  app.patch('/stores/:storeId/bottle-keeps/:keepId', async (req, reply) => {
+  app.patch('/stores/:storeId/bottle-keeps/:keepId', {
+    schema: {
+      params: params({ storeId: sUuid, keepId: sUuid }),
+      body: body({
+        remaining_percent: { type: 'integer', minimum: 0, maximum: 100 },
+        status: { type: 'string', enum: ['FINISHED', 'DISCARDED'] },
+        expected_version: version,
+      }, ['expected_version']),
+    },
+  }, async (req, reply) => {
     const { storeId, keepId } = req.params as P;
     const c0 = await caller(req, storeId, null, 'customer.manage');
     const b = req.body as {

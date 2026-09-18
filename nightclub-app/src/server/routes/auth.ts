@@ -7,6 +7,9 @@ import { E } from '../lib/errors.js';
 import { hashToken, randomToken, sha256 } from '../lib/crypto.js';
 import { audit } from '../lib/tx.js';
 import {
+  body, params, storeParam, str, uuid as sUuid, version,
+} from '../lib/schemas.js';
+import {
   requirePersonal, requirePerm, gucPersonal,
 } from '../lib/ctx.js';
 
@@ -59,7 +62,11 @@ export async function membershipList(userId: string) {
 
 export default async function authRoutes(app: FastifyInstance) {
   // --- dev issuer (isolated development only; disabled in production) ---
-  app.post('/auth/dev/login', async (req, reply) => {
+  app.post('/auth/dev/login', {
+    schema: {
+      body: body({ subject: str(80), display_name: str(200) }, ['subject']),
+    },
+  }, async (req, reply) => {
     if (!config.devAuth) throw E.notFound();
     const b = (req.body ?? {}) as { subject?: string; display_name?: string };
     if (!b.subject || !/^[\w.@-]{1,80}$/.test(b.subject)) {
@@ -116,7 +123,9 @@ export default async function authRoutes(app: FastifyInstance) {
   });
 
   // --- invitations ---
-  app.get('/invitations/:token/lookup', async (req) => {
+  app.get('/invitations/:token/lookup', {
+    schema: { params: params({ token: str(200) }) },
+  }, async (req) => {
     const { token } = req.params as { token: string };
     const r = await withSystem((c) =>
       c.query('SELECT * FROM nightclub.invitation_lookup($1)', [sha256(token)]));
@@ -129,7 +138,13 @@ export default async function authRoutes(app: FastifyInstance) {
     };
   });
 
-  app.post('/invitations/accept', async (req, reply) => {
+  app.post('/invitations/accept', {
+    schema: {
+      body: body({
+        token: str(200), display_name: str(200), dev_subject: str(80),
+      }, ['token', 'display_name']),
+    },
+  }, async (req, reply) => {
     const b = req.body as {
       token?: string; display_name?: string; dev_subject?: string;
     };
@@ -163,7 +178,15 @@ export default async function authRoutes(app: FastifyInstance) {
     };
   });
 
-  app.post('/stores/:storeId/invitations', async (req) => {
+  app.post('/stores/:storeId/invitations', {
+    schema: {
+      params: storeParam,
+      body: body({
+        invite_target: str(64), role_key: str(64),
+        expires_hours: { type: 'integer', minimum: 1, maximum: 8760 },
+      }),
+    },
+  }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'membership.manage');
@@ -204,7 +227,7 @@ export default async function authRoutes(app: FastifyInstance) {
   });
 
   // --- memberships / roles administration ---
-  app.get('/stores/:storeId/memberships', async (req) => {
+  app.get('/stores/:storeId/memberships', { schema: { params: storeParam } }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'membership.manage');
@@ -231,7 +254,12 @@ export default async function authRoutes(app: FastifyInstance) {
       });
   });
 
-  app.post('/stores/:storeId/memberships/:membershipId/suspend', async (req) => {
+  app.post('/stores/:storeId/memberships/:membershipId/suspend', {
+    schema: {
+      params: params({ storeId: sUuid, membershipId: sUuid }),
+      body: body({ expected_version: version, reason: str(1000) }),
+    },
+  }, async (req) => {
     const { storeId, membershipId } = req.params as { storeId: string; membershipId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'membership.manage');
@@ -258,7 +286,12 @@ export default async function authRoutes(app: FastifyInstance) {
       });
   });
 
-  app.put('/stores/:storeId/memberships/:membershipId/operator-pin', async (req) => {
+  app.put('/stores/:storeId/memberships/:membershipId/operator-pin', {
+    schema: {
+      params: params({ storeId: sUuid, membershipId: sUuid }),
+      body: body({ pin: { type: 'string', pattern: '^[0-9]{4,12}$' } }, ['pin']),
+    },
+  }, async (req) => {
     const { storeId, membershipId } = req.params as { storeId: string; membershipId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'credential.manage');
@@ -296,7 +329,15 @@ export default async function authRoutes(app: FastifyInstance) {
       });
   });
 
-  app.put('/stores/:storeId/roles/:roleId', async (req) => {
+  app.put('/stores/:storeId/roles/:roleId', {
+    schema: {
+      params: params({ storeId: sUuid, roleId: sUuid }),
+      body: body({
+        permissions: { type: 'array', items: str(100), maxItems: 200 },
+        expected_version: version,
+      }, ['permissions']),
+    },
+  }, async (req) => {
     const { storeId, roleId } = req.params as { storeId: string; roleId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'role.manage');

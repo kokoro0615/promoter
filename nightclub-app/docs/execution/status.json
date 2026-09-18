@@ -6,14 +6,16 @@
   "v5": {
     "branch": "feat/v5-jp-completion",
     "baseline_sha": "58e9438",
-    "phase": "Phase 0/1 complete — baseline verified + full audit recorded",
+    "phase": "Phase 3b complete — security foundation (schemas/CSRF guard/rate limit/headers)",
     "audit": "findings.json (30 findings), requirements_registry.json",
     "baseline_results": "unit 9 / db 7 / api 34 / e2e 3 — all pass @58e9438",
-    "resume": "docs/execution/resume.md"
+    "resume": "docs/execution/resume.md",
+    "latest_results": "unit 9 / db 7 / api 55 (r1:16 r2r3:18 vip:8 security:13) — all pass",
+    "evidence_phase3b": "docs/execution/evidence/phase3b_verify_20260919.txt"
   },
   "current_release": "R1 verified; R2/R3 internal foundations verified",
   "current_epic": "v5: Phase 3 foundation hardening in progress",
-  "phase": "v5 Phase 3a完了: F-001〜F-010実バグ7件修正＋回帰試験（api 42 tests全パス）。Phase 3bセキュリティ基盤へ移行",
+  "phase": "v5 Phase 3b完了: F-007 runtime schema検証(全12ルートファイル)/F-008 Origin・Fetch Metadataガード/F-009 rate limit/F-021 security headers + security.test.ts 13件追加。api 55 tests全パス。Phase 3c欠落エンドポイントへ移行",
   "completed_features": [
     "EP01-04: tenants/stores/users/memberships/roles/permissions, dev-issuer login, invitations, memberships suspend, operator PIN (argon2id), device enrollment/pairing, operator sessions with epoch-based replacement + X-Operator-Context",
     "EP05-08: events + policy versions (publish gate), customers + name/kana search (same-name preserved), visits + admission segments + price-rule adjudication",

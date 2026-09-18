@@ -6,12 +6,33 @@ import { E } from '../lib/errors.js';
 import { uuid } from '../lib/crypto.js';
 import { audit, emit, idemKey, withReceipt } from '../lib/tx.js';
 import {
+  body, eventParams, int, isoTs, params, query, storeParam, str,
+  uuid as sUuid, version,
+} from '../lib/schemas.js';
+import {
   requirePersonal, requirePerm, gucPersonal,
 } from '../lib/ctx.js';
 
 export default async function opsRoutes(app: FastifyInstance) {
   // ---- permits ----
-  app.post('/stores/:storeId/permits', async (req, reply) => {
+  app.post('/stores/:storeId/permits', {
+    schema: {
+      params: storeParam,
+      body: body({
+        subject_kind: { type: 'string', enum: ['CUSTOMER', 'ACTOR'] },
+        subject_id: sUuid,
+        event_ids: { type: 'array', items: sUuid, maxItems: 100 },
+        allowed_rule_keys: { type: 'array', items: str(100), maxItems: 50 },
+        valid_from: isoTs, valid_to: isoTs,
+        party_limit: { type: 'object' }, event_limit: { type: 'object' },
+        companion_limit: { type: 'object' },
+        principal_presence_required: { type: 'boolean' },
+        proxy_registration_allowed: { type: 'boolean' },
+        proxy_referrer_ids: { type: 'array', items: sUuid, maxItems: 20 },
+        reason: str(1000),
+      }, ['subject_kind', 'subject_id', 'valid_from', 'valid_to', 'reason']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'permit.manage');
@@ -62,7 +83,7 @@ export default async function opsRoutes(app: FastifyInstance) {
     return { permit_id: row.id, permit_key: row.permit_key, trace_id: req.traceId };
   });
 
-  app.get('/stores/:storeId/permits', async (req) => {
+  app.get('/stores/:storeId/permits', { schema: { params: storeParam } }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'permit.manage');
@@ -84,7 +105,9 @@ export default async function opsRoutes(app: FastifyInstance) {
   });
 
   // Revocation preview: which authorized-not-entered segments depend on it.
-  app.post('/stores/:storeId/permits/:permitId/preview-revocation', async (req) => {
+  app.post('/stores/:storeId/permits/:permitId/preview-revocation', {
+    schema: { params: params({ storeId: sUuid, permitId: sUuid }) },
+  }, async (req) => {
     const { storeId, permitId } = req.params as { storeId: string; permitId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'permit.manage');
@@ -103,7 +126,13 @@ export default async function opsRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/stores/:storeId/permits/:permitId/revoke', async (req) => {
+  app.post('/stores/:storeId/permits/:permitId/revoke', {
+    schema: {
+      params: params({ storeId: sUuid, permitId: sUuid }),
+      body: body({ expected_version: version, reason: str(1000) },
+        ['expected_version', 'reason']),
+    },
+  }, async (req) => {
     const { storeId, permitId } = req.params as { storeId: string; permitId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'permit.manage');
@@ -163,7 +192,17 @@ export default async function opsRoutes(app: FastifyInstance) {
   });
 
   // ---- reward rules ----
-  app.post('/stores/:storeId/reward-rules', async (req, reply) => {
+  app.post('/stores/:storeId/reward-rules', {
+    schema: {
+      params: storeParam,
+      body: body({
+        referrer_membership_id: sUuid,
+        basis_points: { type: 'integer', minimum: 0, maximum: 10000 },
+        valid_from: isoTs, valid_to: isoTs,
+        conditions: { type: 'object' },
+      }, ['basis_points', 'valid_from', 'valid_to']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'reward.manage');
@@ -195,7 +234,15 @@ export default async function opsRoutes(app: FastifyInstance) {
   });
 
   // ---- audit read ----
-  app.get('/stores/:storeId/audit-logs', async (req) => {
+  app.get('/stores/:storeId/audit-logs', {
+    schema: {
+      params: storeParam,
+      querystring: query({
+        target_type: str(100), target_id: sUuid,
+        limit: { type: 'string', pattern: '^[0-9]+$', maxLength: 4 },
+      }),
+    },
+  }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'audit.read');
@@ -216,7 +263,26 @@ export default async function opsRoutes(app: FastifyInstance) {
   });
 
   // ---- provisional entries (offline reconciliation intake) ----
-  app.post('/stores/:storeId/events/:eventId/provisional-entries/import', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/provisional-entries/import', {
+    schema: {
+      params: eventParams,
+      body: body({
+        entries: {
+          type: 'array', maxItems: 1000,
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: {
+              device_id: sUuid, local_operation_id: str(200),
+              device_time: isoTs, quantity: int,
+              reception_name: str(200), reason: str(1000), visit_id: sUuid,
+            },
+            required: ['device_id', 'local_operation_id', 'device_time',
+              'quantity', 'reception_name', 'reason'],
+          },
+        },
+      }, ['entries']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'offline.reconcile');
@@ -257,7 +323,9 @@ export default async function opsRoutes(app: FastifyInstance) {
   });
 
   // ---- settlements (build + finalize) ----
-  app.post('/stores/:storeId/events/:eventId/settlements', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/settlements', {
+    schema: { params: eventParams },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'settlement.manage');
@@ -315,7 +383,12 @@ export default async function opsRoutes(app: FastifyInstance) {
     return { settlement_id: row.id, version: row.version, status: 'DRAFT', trace_id: req.traceId };
   });
 
-  app.post('/stores/:storeId/events/:eventId/settlements/:settlementId/finalize', async (req) => {
+  app.post('/stores/:storeId/events/:eventId/settlements/:settlementId/finalize', {
+    schema: {
+      params: params({ storeId: sUuid, eventId: sUuid, settlementId: sUuid }),
+      body: body({ expected_version: version }),
+    },
+  }, async (req) => {
     const { storeId, eventId, settlementId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'settlement.finalize');
@@ -340,7 +413,16 @@ export default async function opsRoutes(app: FastifyInstance) {
   });
 
   // ---- exports (EP25): queued report jobs executed by the worker ----------
-  app.post('/stores/:storeId/exports', async (req, reply) => {
+  app.post('/stores/:storeId/exports', {
+    schema: {
+      params: storeParam,
+      body: body({
+        report_kind: { type: 'string', enum: ['visits', 'payments', 'audit'] },
+        format: { type: 'string', enum: ['CSV'] },
+        filters: { type: 'object' },
+      }, ['report_kind', 'format']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'report.export');
@@ -374,7 +456,7 @@ export default async function opsRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.get('/stores/:storeId/exports', async (req) => {
+  app.get('/stores/:storeId/exports', { schema: { params: storeParam } }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'report.export');
@@ -390,7 +472,9 @@ export default async function opsRoutes(app: FastifyInstance) {
       }));
   });
 
-  app.get('/stores/:storeId/exports/:exportId/download', async (req, reply) => {
+  app.get('/stores/:storeId/exports/:exportId/download', {
+    schema: { params: params({ storeId: sUuid, exportId: sUuid }) },
+  }, async (req, reply) => {
     const { storeId, exportId } = req.params as { storeId: string; exportId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'report.export');

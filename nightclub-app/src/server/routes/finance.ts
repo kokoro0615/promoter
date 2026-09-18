@@ -7,6 +7,9 @@ import { withCtx } from '../lib/db.js';
 import { E } from '../lib/errors.js';
 import { uuid } from '../lib/crypto.js';
 import { audit, emit, idemKey, withReceipt } from '../lib/tx.js';
+import {
+  body, eventChild, eventParams, posMinor, str, uuid as sUuid, version,
+} from '../lib/schemas.js';
 import { visitSummary } from '../lib/summary.js';
 import {
   requirePersonal, requireOperator, requirePerm, type MemberCtx, type OperatorCtx, gucPersonal, gucOperator,
@@ -36,7 +39,15 @@ export default async function financeRoutes(app: FastifyInstance) {
   // admission order. Money comes in -> SUCCEEDED immediately for CASH;
   // EXTERNAL_TERMINAL is recorded as SUCCEEDED only when the operator
   // confirms the terminal result.
-  app.post('/stores/:storeId/events/:eventId/orders', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/orders', {
+    schema: {
+      params: eventParams,
+      body: body({
+        kind: { type: 'string', enum: ['ADMISSION', 'VIP', 'IN_VENUE'] },
+        visit_id: sUuid, booking_id: sUuid,
+      }),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, eventId, 'payment.record');
     const b = req.body as { kind?: string; visit_id?: string; booking_id?: string };
@@ -66,7 +77,9 @@ export default async function financeRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.get('/stores/:storeId/events/:eventId/orders/:orderId', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/orders/:orderId', {
+    schema: { params: eventChild('orderId') },
+  }, async (req) => {
     const { storeId, eventId, orderId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, eventId, 'sales.read');
     return withCtx(c0.g, async (c) => {
@@ -90,7 +103,16 @@ export default async function financeRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/stores/:storeId/events/:eventId/orders/:orderId/payments', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/orders/:orderId/payments', {
+    schema: {
+      params: eventChild('orderId'),
+      body: body({
+        method: { type: 'string', enum: ['CASH', 'EXTERNAL_TERMINAL'] },
+        amount_minor: posMinor,
+        purpose: { type: 'string', enum: ['DEPOSIT', 'FINAL', 'ADMISSION'] },
+      }, ['method', 'amount_minor']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, orderId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, eventId, 'payment.record');
     const b = req.body as { method?: string; amount_minor?: number; purpose?: string };
@@ -172,7 +194,13 @@ export default async function financeRoutes(app: FastifyInstance) {
   });
 
   // Refund request -> pending review. Pending refunds reduce available funds.
-  app.post('/stores/:storeId/events/:eventId/payments/:paymentId/refunds', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/payments/:paymentId/refunds', {
+    schema: {
+      params: eventChild('paymentId'),
+      body: body({ amount_minor: posMinor, reason: str(1000) },
+        ['amount_minor', 'reason']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, paymentId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, eventId, 'payment.refund');
     const b = req.body as { amount_minor?: number; reason?: string };
@@ -232,7 +260,12 @@ export default async function financeRoutes(app: FastifyInstance) {
   });
 
   // Refund approval/execution (money permissions; REQUESTED -> SUCCEEDED).
-  app.post('/stores/:storeId/events/:eventId/refunds/:refundId/execute', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/refunds/:refundId/execute', {
+    schema: {
+      params: eventChild('refundId'),
+      body: body({ expected_version: version }),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, refundId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, eventId, 'payment.refund');
     const b = (req.body ?? {}) as { expected_version?: number };
@@ -287,7 +320,9 @@ export default async function financeRoutes(app: FastifyInstance) {
   });
 
   // Event metrics.
-  app.get('/stores/:storeId/events/:eventId/metrics', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/metrics', {
+    schema: { params: eventParams },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, eventId, 'event.read');
     return withCtx(c0.g, async (c) => {
@@ -323,7 +358,9 @@ export default async function financeRoutes(app: FastifyInstance) {
   });
 
   // Referrer own performance (own-scope only).
-  app.get('/stores/:storeId/events/:eventId/my-performance', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/my-performance', {
+    schema: { params: eventParams },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, eventId, 'report.own');
     return withCtx(c0.g, async (c) => {

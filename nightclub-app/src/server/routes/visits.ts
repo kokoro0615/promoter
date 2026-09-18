@@ -19,6 +19,9 @@ import {
 } from '../lib/tx.js';
 import { visitSummary } from '../lib/summary.js';
 import {
+  body, eventChild, eventParams, query, str, uuid as sUuid, version,
+} from '../lib/schemas.js';
+import {
   requirePersonal, requireOperator, requirePerm, eventAssignments, type MemberCtx, type OperatorCtx, type PersonalCtx, gucPersonal, gucOperator,
 } from '../lib/ctx.js';
 import { config } from '../config.js';
@@ -103,7 +106,31 @@ function permitMatches(
 
 export default async function visitRoutes(app: FastifyInstance) {
   // ---- visit create ------------------------------------------------------
-  app.post('/stores/:storeId/events/:eventId/visits', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/visits', {
+    schema: {
+      params: eventParams,
+      body: body({
+        reception_name: str(200), reading: str(200),
+        planned_count: { type: 'integer', minimum: 1, maximum: 200 },
+        customer_id: { type: ['string', 'null'], format: 'uuid' },
+        referrer_membership_id: { type: ['string', 'null'], format: 'uuid' },
+        arrival_status: { type: 'string', enum: ['UNKNOWN', 'ON_WAY', 'ARRIVED'] },
+        approval_reason: str(1000),
+        segments: {
+          type: 'array', minItems: 1, maxItems: 50,
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: {
+              rule_key: str(100),
+              count: { type: 'integer', minimum: 1, maximum: 200 },
+              requested_customer_id: { type: ['string', 'null'], format: 'uuid' },
+            },
+            required: ['rule_key', 'count'],
+          },
+        },
+      }, ['reception_name', 'planned_count', 'segments']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string };
     const caller = await visitCaller(req, storeId, eventId, 'visit.create');
     const b = req.body as {
@@ -265,7 +292,16 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // ---- list / get --------------------------------------------------------
-  app.get('/stores/:storeId/events/:eventId/visits', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/visits', {
+    schema: {
+      params: eventParams,
+      querystring: query({
+        status: str(50), q: str(200),
+        limit: { type: 'string', pattern: '^[0-9]+$', maxLength: 4 },
+        cursor: sUuid,
+      }),
+    },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string };
     const q = req.query as { status?: string; q?: string; limit?: string; cursor?: string };
     const caller = await visitCaller(req, storeId, eventId, 'visit.read');
@@ -292,7 +328,9 @@ export default async function visitRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get('/stores/:storeId/events/:eventId/visits/:visitId', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/visits/:visitId', {
+    schema: { params: eventChild('visitId') },
+  }, async (req) => {
     const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'visit.read');
     return withCtx(caller.g, async (c) => {
@@ -302,7 +340,15 @@ export default async function visitRoutes(app: FastifyInstance) {
     });
   });
 
-  app.patch('/stores/:storeId/events/:eventId/visits/:visitId', async (req, reply) => {
+  app.patch('/stores/:storeId/events/:eventId/visits/:visitId', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({
+        expected_version: version, reception_name: str(200),
+        arrival_status: { type: 'string', enum: ['UNKNOWN', 'ON_WAY', 'ARRIVED'] },
+      }, ['expected_version']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'visit.edit');
     const b = req.body as {
@@ -349,7 +395,12 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // Cancel: release only unentered held quota, exactly once.
-  app.post('/stores/:storeId/events/:eventId/visits/:visitId/cancel', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/visits/:visitId/cancel', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({ expected_version: version, reason: str(1000) }),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'visit.cancel');
     const b = (req.body ?? {}) as { expected_version?: number; reason?: string };
@@ -412,7 +463,12 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // ---- approvals ----------------------------------------------------------
-  app.get('/stores/:storeId/events/:eventId/approvals', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/approvals', {
+    schema: {
+      params: eventParams,
+      querystring: query({ status: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED', 'RETURNED', 'SUPERSEDED'] } }),
+    },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'approval.read');
     const q = req.query as { status?: string };
@@ -444,7 +500,16 @@ export default async function visitRoutes(app: FastifyInstance) {
 
   // First valid decision wins. Entrance staff approve normally (no
   // absence/wait/arrival preconditions — policy entrance_regular_approval).
-  app.post('/stores/:storeId/events/:eventId/approvals/:requestId/decisions', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/approvals/:requestId/decisions', {
+    schema: {
+      params: eventChild('requestId'),
+      body: body({
+        expected_request_version: version, expected_segment_version: version,
+        decision: { type: 'string', enum: ['APPROVED', 'REJECTED', 'RETURNED'] },
+        reason: str(1000),
+      }, ['expected_request_version', 'expected_segment_version', 'decision']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, requestId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'approval.decide');
     const b = req.body as {
@@ -576,7 +641,14 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // ---- customer identity check (never implied by name match) --------------
-  app.post('/stores/:storeId/events/:eventId/visits/:visitId/customer-checks', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/visits/:visitId/customer-checks', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({
+        customer_id: sUuid, method: str(50), note: str(1000),
+      }, ['customer_id', 'method']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'entrance.match');
     const b = req.body as { customer_id?: string; method?: string; note?: string };
@@ -637,7 +709,27 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // ---- entry (partial admission allowed) ----------------------------------
-  app.post('/stores/:storeId/events/:eventId/visits/:visitId/entries', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/visits/:visitId/entries', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({
+        expected_visit_version: version,
+        selections: {
+          type: 'array', minItems: 1, maxItems: 50,
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: {
+              segment_id: sUuid,
+              count: { type: 'integer', minimum: 1, maximum: 200 },
+            },
+            required: ['segment_id', 'count'],
+          },
+        },
+        payment_ids: { type: 'array', maxItems: 50, items: sUuid },
+        pass_id: { type: ['string', 'null'], format: 'uuid' },
+      }, ['expected_visit_version', 'selections']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'entrance.checkin');
     const b = req.body as {
@@ -792,12 +884,23 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // Exit / re-entry via group pass. Re-entry consumes no acquisition quota.
-  app.post('/stores/:storeId/events/:eventId/passes/exit', async (req, reply) => {
-    return passMove(req, reply, 'EXIT');
-  });
-  app.post('/stores/:storeId/events/:eventId/passes/reentry', async (req, reply) => {
-    return passMove(req, reply, 'REENTRY');
-  });
+  const passMoveSchema = {
+    schema: {
+      params: eventParams,
+      body: body({
+        pass_id: sUuid,
+        quantity: { type: 'integer', minimum: 1, maximum: 200 },
+      }, ['pass_id']),
+    },
+  };
+  app.post('/stores/:storeId/events/:eventId/passes/exit', passMoveSchema,
+    async (req, reply) => {
+      return passMove(req, reply, 'EXIT');
+    });
+  app.post('/stores/:storeId/events/:eventId/passes/reentry', passMoveSchema,
+    async (req, reply) => {
+      return passMove(req, reply, 'REENTRY');
+    });
 
   async function passMove(req: FastifyRequest, reply: FastifyReply, kind: 'EXIT' | 'REENTRY') {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
@@ -860,7 +963,12 @@ export default async function visitRoutes(app: FastifyInstance) {
   }
 
   // Entry correction: append-only compensating entry (manager only).
-  app.post('/stores/:storeId/events/:eventId/entries/:entryId/corrections', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/entries/:entryId/corrections', {
+    schema: {
+      params: eventChild('entryId'),
+      body: body({ reason: str(1000) }, ['reason']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, entryId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'entry.correct');
     const b = req.body as { reason?: string };

@@ -8,6 +8,9 @@ import { E } from '../lib/errors.js';
 import { hashToken, pairingCode, randomToken, sha256 } from '../lib/crypto.js';
 import { audit } from '../lib/tx.js';
 import {
+  body, params, storeParam, str, uuid as sUuid, version,
+} from '../lib/schemas.js';
+import {
   requirePersonal, requireDevice, requireOperator, requirePerm, gucPersonal, gucDevice, gucOperator,
 } from '../lib/ctx.js';
 
@@ -26,7 +29,12 @@ function setOperatorCookie(reply: FastifyReply, token: string) {
 
 export default async function deviceRoutes(app: FastifyInstance) {
   // Admin issues a one-time pairing code for a new device row.
-  app.post('/stores/:storeId/devices/enrollments', async (req, reply) => {
+  app.post('/stores/:storeId/devices/enrollments', {
+    schema: {
+      params: storeParam,
+      body: body({ label: str(60) }, ['label']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'device.enroll');
@@ -64,7 +72,9 @@ export default async function deviceRoutes(app: FastifyInstance) {
   });
 
   // Device consumes the pairing code -> device session cookie.
-  app.post('/device/enroll', async (req, reply) => {
+  app.post('/device/enroll', {
+    schema: { body: body({ pairing_code: str(100) }, ['pairing_code']) },
+  }, async (req, reply) => {
     const b = req.body as { pairing_code?: string };
     if (!b?.pairing_code || b.pairing_code.length < 6 || b.pairing_code.length > 100) {
       throw E.invalid('pairing_code required');
@@ -93,7 +103,7 @@ export default async function deviceRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get('/stores/:storeId/devices', async (req) => {
+  app.get('/stores/:storeId/devices', { schema: { params: storeParam } }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'device.manage');
@@ -121,7 +131,12 @@ export default async function deviceRoutes(app: FastifyInstance) {
       });
   });
 
-  app.post('/stores/:storeId/devices/:deviceId/revoke', async (req) => {
+  app.post('/stores/:storeId/devices/:deviceId/revoke', {
+    schema: {
+      params: params({ storeId: sUuid, deviceId: sUuid }),
+      body: body({ expected_version: version }),
+    },
+  }, async (req) => {
     const { storeId, deviceId } = req.params as { storeId: string; deviceId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'device.revoke');
@@ -191,7 +206,14 @@ export default async function deviceRoutes(app: FastifyInstance) {
 
   // PIN unlock -> operator session. Replacement bumps the device epoch so the
   // previous operator's tabs fail with OPERATOR_CHANGED.
-  app.post('/device/operator-sessions', async (req, reply) => {
+  app.post('/device/operator-sessions', {
+    schema: {
+      body: body({
+        membership_id: sUuid, event_id: sUuid,
+        pin: { type: 'string', pattern: '^[0-9]{4,12}$' },
+      }, ['membership_id', 'event_id', 'pin']),
+    },
+  }, async (req, reply) => {
     const d = await requireDevice(req);
     const b = req.body as { membership_id?: string; event_id?: string; pin?: string };
     if (!b?.membership_id || !b.event_id || !b.pin) {

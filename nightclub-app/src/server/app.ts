@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import { randomUUID } from 'node:crypto';
 import { AppError } from './lib/errors.js';
 import { ReqAuth } from './lib/ctx.js';
+import { registerSecurity } from './lib/security.js';
 import authRoutes from './routes/auth.js';
 import deviceRoutes from './routes/devices.js';
 import eventRoutes from './routes/events.js';
@@ -19,6 +20,7 @@ import posRoutes from './routes/pos.js';
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, genReqId: () => randomUUID() });
   await app.register(cookie);
+  registerSecurity(app);
 
   app.addHook('onRequest', async (req) => {
     req.auth = new ReqAuth(req);

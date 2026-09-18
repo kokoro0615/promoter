@@ -70,7 +70,8 @@
       "detail": "request bodies are cast with TypeScript `as` assertions only — no runtime schema validation (master prompt: runtime schemas required, TS assertions do not count).",
       "evidence": "all src/server/routes/*.ts",
       "remediation": "add Fastify `schema` option (bundled ajv) per route for body/params/query",
-      "status": "open"
+      "status": "fixed",
+      "fixed_in": "phase3b"
     },
     {
       "id": "F-008",
@@ -79,7 +80,8 @@
       "detail": "no Origin/Fetch-Metadata/CSRF enforcement on state-changing cookie-authenticated requests; no security headers.",
       "evidence": "src/server/app.ts",
       "remediation": "add onRequest guard: POST/PUT/PATCH/DELETE require same-site (Sec-Fetch-Site) or allowed Origin; add baseline security headers",
-      "status": "open"
+      "status": "fixed",
+      "fixed_in": "phase3b"
     },
     {
       "id": "F-009",
@@ -88,7 +90,8 @@
       "detail": "no application rate limiting on /auth/dev/login, /device/enroll, invitation accept, ticket redeem, customer search (PIN has DB lockout only).",
       "evidence": "src/server/routes/{auth,devices,tickets,customers}.ts",
       "remediation": "in-memory token-bucket hook for sensitive endpoints; document multi-instance limitation",
-      "status": "open"
+      "status": "fixed",
+      "fixed_in": "phase3b"
     },
     {
       "id": "F-010",
@@ -186,7 +189,8 @@
       "area": "security headers",
       "detail": "no CSP/X-Content-Type-Options/Referrer-Policy headers on API.",
       "remediation": "onSend hook baseline headers",
-      "status": "open"
+      "status": "fixed",
+      "fixed_in": "phase3b"
     },
     {
       "id": "F-022",

@@ -9,6 +9,10 @@ import { E } from '../lib/errors.js';
 import { uuid, sha256 } from '../lib/crypto.js';
 import { audit, emit, idemKey, withReceipt } from '../lib/tx.js';
 import {
+  body, eventChild, eventParams, int, isoTs, minor, params, storeParam,
+  str, uuid as sUuid, version,
+} from '../lib/schemas.js';
+import {
   requirePersonal, requireOperator, requirePerm, type MemberCtx, type OperatorCtx, gucPersonal, gucOperator,
 } from '../lib/ctx.js';
 
@@ -34,7 +38,12 @@ const devSign = (ref: string, result: string) =>
 
 export default async function vipRoutes(app: FastifyInstance) {
   // ---- floor inventory ----
-  app.post('/stores/:storeId/floor-maps', async (req, reply) => {
+  app.post('/stores/:storeId/floor-maps', {
+    schema: {
+      params: storeParam,
+      body: body({ layout: { type: 'object' }, status: str(32) }, ['layout']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'floor.manage');
@@ -59,7 +68,7 @@ export default async function vipRoutes(app: FastifyInstance) {
     return { floor_map_id: row.id, version: row.version, trace_id: req.traceId };
   });
 
-  app.get('/stores/:storeId/floor', async (req) => {
+  app.get('/stores/:storeId/floor', { schema: { params: storeParam } }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'event.read');
@@ -76,7 +85,15 @@ export default async function vipRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/stores/:storeId/tables', async (req, reply) => {
+  app.post('/stores/:storeId/tables', {
+    schema: {
+      params: storeParam,
+      body: body({
+        table_code: str(64), zone: str(64),
+        capacity_min: int, capacity_max: int,
+      }, ['table_code', 'zone', 'capacity_min', 'capacity_max']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'floor.manage');
@@ -105,7 +122,7 @@ export default async function vipRoutes(app: FastifyInstance) {
   });
 
   // ---- bookings ----
-  app.get('/stores/:storeId/events/:eventId/bookings', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/bookings', { schema: { params: eventParams } }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'booking.read', eventId);
     return withCtx(c0.g, async (c) => {
@@ -129,7 +146,21 @@ export default async function vipRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/stores/:storeId/events/:eventId/bookings', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/bookings', {
+    schema: {
+      params: eventParams,
+      body: body({
+        visit_id: sUuid, customer_id: sUuid,
+        party_count: { type: 'integer', minimum: 1 },
+        starts_at: isoTs, ends_at: isoTs,
+        admission_pricing: { type: 'string', enum: ['INCLUDED', 'SEPARATE'] },
+        minimum_minor: minor, deposit_minor: minor,
+        table_ids: { type: 'array', items: sUuid, maxItems: 20 },
+        approval_required: { type: 'boolean' },
+        reception_name: str(200),
+      }, ['party_count', 'starts_at', 'ends_at', 'minimum_minor', 'deposit_minor']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'booking.create', eventId);
     const b = req.body as {
@@ -195,7 +226,15 @@ export default async function vipRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/decision', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/decision', {
+    schema: {
+      params: eventChild('bookingId'),
+      body: body({
+        decision: { type: 'string', enum: ['APPROVED', 'REJECTED'] },
+        reason: str(1000), expected_version: version,
+      }, ['decision']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, bookingId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'booking.approve', eventId);
     const b = req.body as { decision?: string; reason?: string; expected_version?: number };
@@ -258,7 +297,9 @@ export default async function vipRoutes(app: FastifyInstance) {
 
   // Deposit checkout via the dev PSP adapter. Provider-independent contract:
   // returns a checkout_url the client opens; result arrives via webhook only.
-  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/checkout', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/checkout', {
+    schema: { params: eventChild('bookingId') },
+  }, async (req, reply) => {
     const { storeId, eventId, bookingId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'payment.create', eventId);
     const g = c0.g;
@@ -332,7 +373,16 @@ export default async function vipRoutes(app: FastifyInstance) {
 
   // Dev PSP webhook: signed provider callback -> payment SUCCEEDED ->
   // booking CONFIRMED. Real PSP signature verification is a D-05 gate.
-  app.post('/integrations/:provider/webhooks', async (req) => {
+  app.post('/integrations/:provider/webhooks', {
+    schema: {
+      params: params({ provider: str(64) }),
+      body: body({
+        provider_reference: str(200),
+        result: { type: 'string', enum: ['success', 'failure'] },
+        signature: str(128), account: str(128),
+      }, ['provider_reference', 'result', 'signature']),
+    },
+  }, async (req) => {
     const { provider } = req.params as { provider: string };
     if (provider !== 'devpsp') throw E.notFound('provider');
     const b = req.body as {
@@ -454,7 +504,15 @@ export default async function vipRoutes(app: FastifyInstance) {
     }, {}, guc);
   });
 
-  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/move', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/move', {
+    schema: {
+      params: eventChild('bookingId'),
+      body: body({
+        table_id: sUuid, starts_at: isoTs, ends_at: isoTs,
+        expected_version: version,
+      }, ['table_id', 'starts_at', 'ends_at']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, bookingId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'booking.manage', eventId);
     const b = req.body as { table_id?: string; starts_at?: string; ends_at?: string; expected_version?: number };
@@ -504,7 +562,12 @@ export default async function vipRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/cancel', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/cancel', {
+    schema: {
+      params: eventChild('bookingId'),
+      body: body({ expected_version: version, reason: str(1000) }),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, bookingId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'booking.cancel', eventId);
     const b = (req.body ?? {}) as { expected_version?: number; reason?: string };

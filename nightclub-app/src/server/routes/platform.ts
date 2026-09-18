@@ -6,6 +6,9 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { withCtx, withSystem, type Client } from '../lib/db.js';
 import { E } from '../lib/errors.js';
 import { audit, idemKey, platformAudit, platformReceipt } from '../lib/tx.js';
+import {
+  body, isoTs, minor, params, storeParam, str, uuid as sUuid, version,
+} from '../lib/schemas.js';
 import { requirePersonal, requirePerm, gucPersonal } from '../lib/ctx.js';
 import { config } from '../config.js';
 
@@ -54,7 +57,9 @@ export default async function platformRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/platform/tenants', async (req, reply) => {
+  app.post('/platform/tenants', {
+    schema: { body: body({ name: str(120) }, ['name']) },
+  }, async (req, reply) => {
     const { userId, sys } = await requirePlatform(req);
     const b = req.body as { name?: string };
     if (!b?.name || b.name.length > 120) throw E.invalid('name required');
@@ -93,7 +98,15 @@ export default async function platformRoutes(app: FastifyInstance) {
     }));
   });
 
-  app.post('/platform/plans', async (req, reply) => {
+  app.post('/platform/plans', {
+    schema: {
+      body: body({
+        code: str(64), name: str(120),
+        features: { type: 'object' }, limits: { type: 'object' },
+        monthly_price_minor: minor, currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+      }, ['code', 'name']),
+    },
+  }, async (req, reply) => {
     const { userId, sys } = await requirePlatform(req);
     const b = req.body as {
       code?: string; name?: string; features?: Record<string, unknown>;
@@ -120,7 +133,16 @@ export default async function platformRoutes(app: FastifyInstance) {
 
   // ---- subscriptions --------------------------------------------------------
   // Create or replace (cancel current + start new) the tenant subscription.
-  app.post('/platform/tenants/:tenantId/subscription', async (req, reply) => {
+  app.post('/platform/tenants/:tenantId/subscription', {
+    schema: {
+      params: params({ tenantId: sUuid }),
+      body: body({
+        plan_id: sUuid,
+        trial_days: { type: 'integer', minimum: 0, maximum: 365 },
+        period_days: { type: 'integer', minimum: 1, maximum: 366 },
+      }, ['plan_id']),
+    },
+  }, async (req, reply) => {
     const { userId, sys } = await requirePlatform(req);
     const { tenantId } = req.params as { tenantId: string };
     const b = req.body as {
@@ -170,7 +192,15 @@ export default async function platformRoutes(app: FastifyInstance) {
   });
 
   // Billing state transitions: activate / past_due / suspend / cancel.
-  app.post('/platform/subscriptions/:subscriptionId/transition', async (req, reply) => {
+  app.post('/platform/subscriptions/:subscriptionId/transition', {
+    schema: {
+      params: params({ subscriptionId: sUuid }),
+      body: body({
+        status: { type: 'string', enum: ['ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CANCELED'] },
+        expected_version: version,
+      }, ['status', 'expected_version']),
+    },
+  }, async (req, reply) => {
     const { userId, sys } = await requirePlatform(req);
     const { subscriptionId } = req.params as { subscriptionId: string };
     const b = req.body as { status?: string; expected_version?: number };
@@ -213,7 +243,16 @@ export default async function platformRoutes(app: FastifyInstance) {
   });
 
   // ---- invoices ---------------------------------------------------------------
-  app.post('/platform/tenants/:tenantId/invoices', async (req, reply) => {
+  app.post('/platform/tenants/:tenantId/invoices', {
+    schema: {
+      params: params({ tenantId: sUuid }),
+      body: body({
+        subscription_id: sUuid, period_start: isoTs, period_end: isoTs,
+        amount_minor: minor, currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+        due_at: isoTs,
+      }, ['subscription_id', 'period_start', 'period_end', 'amount_minor']),
+    },
+  }, async (req, reply) => {
     const { userId, sys } = await requirePlatform(req);
     const { tenantId } = req.params as { tenantId: string };
     const b = req.body as {
@@ -247,7 +286,15 @@ export default async function platformRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.post('/platform/invoices/:invoiceId/transition', async (req, reply) => {
+  app.post('/platform/invoices/:invoiceId/transition', {
+    schema: {
+      params: params({ invoiceId: sUuid }),
+      body: body({
+        status: { type: 'string', enum: ['ISSUED', 'PAID', 'FAILED', 'VOID'] },
+        expected_version: version, external_ref: str(200),
+      }, ['status', 'expected_version']),
+    },
+  }, async (req, reply) => {
     const { userId, sys } = await requirePlatform(req);
     const { invoiceId } = req.params as { invoiceId: string };
     const b = req.body as { status?: string; expected_version?: number; external_ref?: string };
@@ -288,7 +335,12 @@ export default async function platformRoutes(app: FastifyInstance) {
   });
 
   // ---- deletion scheduling ----------------------------------------------------
-  app.post('/platform/tenants/:tenantId/deletion-requests', async (req, reply) => {
+  app.post('/platform/tenants/:tenantId/deletion-requests', {
+    schema: {
+      params: params({ tenantId: sUuid }),
+      body: body({ execute_after: isoTs }, ['execute_after']),
+    },
+  }, async (req, reply) => {
     const { userId, sys } = await requirePlatform(req);
     const { tenantId } = req.params as { tenantId: string };
     const b = req.body as { execute_after?: string };
@@ -325,7 +377,12 @@ export default async function platformRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.post('/platform/deletion-requests/:requestId/cancel', async (req, reply) => {
+  app.post('/platform/deletion-requests/:requestId/cancel', {
+    schema: {
+      params: params({ requestId: sUuid }),
+      body: body({ expected_version: version }, ['expected_version']),
+    },
+  }, async (req, reply) => {
     const { userId, sys } = await requirePlatform(req);
     const { requestId } = req.params as { requestId: string };
     const b = (req.body ?? {}) as { expected_version?: number };
@@ -360,7 +417,9 @@ export default async function platformRoutes(app: FastifyInstance) {
   });
 
   // ---- onboarding -------------------------------------------------------------
-  app.get('/platform/tenants/:tenantId/onboarding', async (req) => {
+  app.get('/platform/tenants/:tenantId/onboarding', {
+    schema: { params: params({ tenantId: sUuid }) },
+  }, async (req) => {
     const { sys } = await requirePlatform(req);
     const { tenantId } = req.params as { tenantId: string };
     return sys(async (c) => ({
@@ -370,7 +429,12 @@ export default async function platformRoutes(app: FastifyInstance) {
     }));
   });
 
-  app.put('/platform/tenants/:tenantId/onboarding/:itemKey', async (req) => {
+  app.put('/platform/tenants/:tenantId/onboarding/:itemKey', {
+    schema: {
+      params: params({ tenantId: sUuid, itemKey: { type: 'string', enum: ONBOARD_ITEMS } }),
+      body: body({ done: { type: 'boolean' } }),
+    },
+  }, async (req) => {
     const { userId, sys } = await requirePlatform(req);
     const { tenantId, itemKey } = req.params as { tenantId: string; itemKey: string };
     const b = (req.body ?? {}) as { done?: boolean };
@@ -411,7 +475,15 @@ export default async function platformRoutes(app: FastifyInstance) {
 
 // tenant-scoped store settings (EP25): update name/timezone/currency.
 export async function storeSettingsRoutes(app: FastifyInstance) {
-  app.patch('/stores/:storeId', async (req) => {
+  app.patch('/stores/:storeId', {
+    schema: {
+      params: storeParam,
+      body: body({
+        name: str(200), timezone: str(64),
+        currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+      }),
+    },
+  }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'policy.manage');

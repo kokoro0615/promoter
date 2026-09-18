@@ -10,6 +10,10 @@ import { E } from '../lib/errors.js';
 import { nameKey } from '../lib/namekey.js';
 import { uuid, sha256, randomToken } from '../lib/crypto.js';
 import { audit, emit, idemKey, withReceipt } from '../lib/tx.js';
+import {
+  body, eventChild, eventParams, isoTs, minor, str,
+  uuid as sUuid, version,
+} from '../lib/schemas.js';
 import { visitSummary } from '../lib/summary.js';
 import {
   requirePersonal, requireOperator, requirePerm,
@@ -49,7 +53,18 @@ type P = {
 
 export default async function ticketRoutes(app: FastifyInstance) {
   // ---- ticket products ----------------------------------------------------
-  app.post('/stores/:storeId/events/:eventId/ticket-products', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/ticket-products', {
+    schema: {
+      params: eventParams,
+      body: body({
+        code: str(64), name: str(200), price_minor: minor,
+        currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+        sales_from: isoTs, sales_to: isoTs,
+        quantity_limit: { type: ['integer', 'null'], minimum: 1 },
+        per_order_limit: { type: 'integer', minimum: 1, maximum: 100 },
+      }, ['code', 'name', 'price_minor', 'sales_from', 'sales_to']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as P;
     const c0 = await caller(req, storeId, eventId, 'event.manage');
     const b = req.body as {
@@ -92,7 +107,9 @@ export default async function ticketRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.get('/stores/:storeId/events/:eventId/ticket-products', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/ticket-products', {
+    schema: { params: eventParams },
+  }, async (req) => {
     const { storeId, eventId } = req.params as P;
     const c0 = await caller(req, storeId, eventId, 'event.read');
     return withCtx(c0.g, async (c) => {
@@ -114,7 +131,16 @@ export default async function ticketRoutes(app: FastifyInstance) {
   // ---- purchase --------------------------------------------------------------
   // Staff-assisted or member purchase. Payment methods: CASH / EXTERNAL_TERMINAL
   // record immediately; PSP requires the provider webhook (dev: not wired).
-  app.post('/stores/:storeId/events/:eventId/ticket-orders', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/ticket-orders', {
+    schema: {
+      params: eventParams,
+      body: body({
+        product_id: sUuid, quantity: { type: 'integer', minimum: 1, maximum: 100 },
+        buyer_name: str(200), customer_id: { type: ['string', 'null'], format: 'uuid' },
+        method: { type: 'string', enum: ['CASH', 'EXTERNAL_TERMINAL'] },
+      }, ['product_id', 'quantity', 'buyer_name', 'method']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as P;
     const c0 = await caller(req, storeId, eventId, 'payment.create');
     const b = req.body as {
@@ -237,7 +263,9 @@ export default async function ticketRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.get('/stores/:storeId/events/:eventId/ticket-orders/:orderId', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/ticket-orders/:orderId', {
+    schema: { params: eventChild('orderId') },
+  }, async (req) => {
     const { storeId, eventId, orderId } = req.params as P;
     const c0 = await caller(req, storeId, eventId, 'sales.read');
     return withCtx(c0.g, async (c) => {
@@ -258,7 +286,13 @@ export default async function ticketRoutes(app: FastifyInstance) {
   });
 
   // Cancel: void un-redeemed instances + refund row for the payment.
-  app.post('/stores/:storeId/events/:eventId/ticket-orders/:orderId/cancel',
+  app.post('/stores/:storeId/events/:eventId/ticket-orders/:orderId/cancel', {
+    schema: {
+      params: eventChild('orderId'),
+      body: body({ expected_version: version, reason: str(1000) },
+        ['expected_version']),
+    },
+  },
     async (req, reply) => {
       const { storeId, eventId, orderId } = req.params as P;
       const c0 = await caller(req, storeId, eventId, 'payment.refund');
@@ -317,7 +351,13 @@ export default async function ticketRoutes(app: FastifyInstance) {
 
   // ---- redemption (entrance) -------------------------------------------------
   // QR token -> visit + AUTHORIZED segment + FIRST_ENTRY + group pass.
-  app.post('/stores/:storeId/events/:eventId/tickets/redeem', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/tickets/redeem', {
+    schema: {
+      params: eventParams,
+      body: body({ token: { type: 'string', minLength: 10, maxLength: 200 } },
+        ['token']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as P;
     const c0 = await caller(req, storeId, eventId, 'entrance.checkin');
     const b = req.body as { token?: string };

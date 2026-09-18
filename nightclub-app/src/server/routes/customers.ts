@@ -7,6 +7,9 @@ import { E } from '../lib/errors.js';
 import { nameKey, kanaKey } from '../lib/namekey.js';
 import { audit } from '../lib/tx.js';
 import {
+  body, params, query, storeParam, str, uuid as sUuid, version,
+} from '../lib/schemas.js';
+import {
   requirePersonal, requirePerm, requireOperator, type MemberCtx, type OperatorCtx, gucPersonal, gucOperator,
 } from '../lib/ctx.js';
 
@@ -33,7 +36,15 @@ async function customerCaller(req: FastifyRequest, storeId: string): Promise<Cal
 export default async function customerRoutes(app: FastifyInstance) {
   // Name-centered search. Min 1 char; prefix (btree) + substring (trgm) +
   // kana/alias keys. Candidates stay separate per customer row.
-  app.get('/stores/:storeId/customers', async (req) => {
+  app.get('/stores/:storeId/customers', {
+    schema: {
+      params: storeParam,
+      querystring: query({
+        q: str(200),
+        limit: { type: 'string', pattern: '^[0-9]+$', maxLength: 4 },
+      }),
+    },
+  }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const q = (req.query as { q?: string; limit?: string }).q ?? '';
     const limit = Math.min(Number((req.query as { limit?: string }).limit) || 30, 100);
@@ -59,7 +70,15 @@ export default async function customerRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/stores/:storeId/customers', async (req, reply) => {
+  app.post('/stores/:storeId/customers', {
+    schema: {
+      params: storeParam,
+      body: body({
+        display_name: str(200), reading: str(200),
+        aliases: { type: 'array', items: str(200), maxItems: 20 },
+      }, ['display_name']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as { storeId: string };
     const { g, member } = await customerCaller(req, storeId);
     if (!member.permissions.has('customer.manage') && !member.permissions.has('visit.create')) {
@@ -92,7 +111,15 @@ export default async function customerRoutes(app: FastifyInstance) {
     return { id: row.id, display_name: b.display_name, version: row.version };
   });
 
-  app.patch('/stores/:storeId/customers/:customerId', async (req) => {
+  app.patch('/stores/:storeId/customers/:customerId', {
+    schema: {
+      params: params({ storeId: sUuid, customerId: sUuid }),
+      body: body({
+        expected_version: version, display_name: str(200),
+        masked_hint: str(200),
+      }, ['expected_version']),
+    },
+  }, async (req) => {
     const { storeId, customerId } = req.params as { storeId: string; customerId: string };
     const { g, member } = await customerCaller(req, storeId);
     requirePerm(member, 'customer.manage');
@@ -121,7 +148,15 @@ export default async function customerRoutes(app: FastifyInstance) {
 
   // Regular designation / revocation. Revocation surfaces active permits —
   // they are NOT silently removed (settings_and_rules.md §7).
-  app.post('/stores/:storeId/customers/:customerId/regular-designation', async (req) => {
+  app.post('/stores/:storeId/customers/:customerId/regular-designation', {
+    schema: {
+      params: params({ storeId: sUuid, customerId: sUuid }),
+      body: body({
+        expected_version: version, designate: { type: 'boolean' },
+        reason: str(1000), confirm: { type: 'boolean' },
+      }, ['expected_version', 'designate']),
+    },
+  }, async (req) => {
     const { storeId, customerId } = req.params as { storeId: string; customerId: string };
     const { g, member } = await customerCaller(req, storeId);
     requirePerm(member, 'customer.designate');
