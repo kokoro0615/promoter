@@ -1,10 +1,18 @@
 {
-  "input_version": "Nightclub v4.0 (2026-09-15) / SWE2_MASTER_PROMPT 1.0",
+  "input_version": "Nightclub v4.0 (2026-09-15) / SWE2_MASTER_PROMPT 1.0 + SWE2MAX_MASTER_PROMPT (v5 jp completion)",
   "package_root": "/home/kokoro/projects/clients/promoter/Nightclub_SWE2_Handoff_20260916/Nightclub_v4_Development_Package",
   "package_manifest": "90 files sha256 all-match (2026-09-16)",
   "app_root": "/home/kokoro/projects/clients/promoter/nightclub-app",
+  "v5": {
+    "branch": "feat/v5-jp-completion",
+    "baseline_sha": "58e9438",
+    "phase": "Phase 0/1 complete — baseline verified + full audit recorded",
+    "audit": "findings.json (30 findings), requirements_registry.json",
+    "baseline_results": "unit 9 / db 7 / api 34 / e2e 3 — all pass @58e9438",
+    "resume": "docs/execution/resume.md"
+  },
   "current_release": "R1 verified; R2/R3 internal foundations verified",
-  "current_epic": "R1 全体（EP01-23）— API/PWA/worker/試験が通しで稼働",
+  "current_epic": "v5: Phase 3 foundation hardening in progress",
   "phase": "R1 verified + R2(EP24/25)/R3(EP26/27) 内製範囲実装・検証済み",
   "completed_features": [
     "EP01-04: tenants/stores/users/memberships/roles/permissions, dev-issuer login, invitations, memberships suspend, operator PIN (argon2id), device enrollment/pairing, operator sessions with epoch-based replacement + X-Operator-Context",
