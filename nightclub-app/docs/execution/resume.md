@@ -1,6 +1,6 @@
 # Resume guide — v5 Japan completion
 
-Last updated: 2026-09-19 (Phase 0/1 close-out)
+Last updated: 2026-09-19 (Phase 4 close-out)
 Branch: `feat/v5-jp-completion` (repo root `/home/kokoro/projects/clients/promoter`)
 
 ## How to resume
@@ -11,27 +11,37 @@ Branch: `feat/v5-jp-completion` (repo root `/home/kokoro/projects/clients/promot
 4. `pnpm verify` — lint + unit + db/RLS + api tests (auto-resets `nightclub_test`)
 5. `pnpm test:e2e` — Playwright (auto-starts api+web; needs seeded dev DB)
 6. `pnpm openapi:lint` — spec contract check
+7. `pnpm build` — frontend production build (tsc build config + vite + PWA)
 
 State of record: `docs/execution/status.json`, `docs/execution/findings.json`,
 `docs/execution/requirements_registry.json`, `docs/execution/blockers.md`.
 
-## Current baseline (verified 2026-09-19 @ 58e9438)
+## Current state (verified 2026-09-19 @ 93a4ec2)
 
-- unit 9 / db 7 / api 34 (r1=16, r2r3=18) / e2e 3 — all pass
-- worker export job verified; build+openapi lint pass
+- unit 9 / db 7 / api 104 (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35
+  authalt:11 publicbook:3) / e2e 3 / vite build — all pass
+- evidence: `docs/execution/evidence/phase4_verify_20260919.txt`
+
+## Shipped phases
+
+- 3a `517529e` — VIP checkout/webhook money path + 6 audit bugs (api 42)
+- 3b `f55d00a` — runtime schemas, CSRF guard, rate limits, security headers (api 55)
+- 3c `06094cf` — v5 missing endpoints + regression suite (api 90)
+- 3d `2db9535` — email-link auth, TOTP/recovery/step-up, PSP adapter+stripe seam (api 101)
+- 4a `4901805` — public booking pages: slug lookup + APPROVAL_PENDING submissions (api 104)
+- 4b `93a4ec2` — role-view frontend redesign: login/MFA, promoter, kiosk,
+  admin 12 tabs, platform console, public booking form (e2e 3)
 
 ## Phase 1 audit result
 
-30 findings recorded in `findings.json`. Highest-priority real bugs:
-F-001 (webhook never confirms bookings + cross-booking allocation confirm),
-F-002 (my-performance broken join), F-004 (move 500 on PAYMENT_PENDING),
-F-005 (PROCESSING receipt never reclaimed), F-006 (CSV formula injection),
-F-007 (no runtime validation), F-008 (no CSRF guard), F-009 (no rate limits).
+32 findings recorded in `findings.json`; F-001..F-032 fixed through Phase 4
+(F-029 open = remaining scope). Highest-priority real bugs were the money
+path (F-001), PROCESSING receipt reclaim (F-005), and CSRF/rate-limit (F-008/9).
 
-## Work order (do not skip phases)
+## Work order (remaining)
 
-Phase 3 foundation fixes → missing endpoints/migration 0004 → auth alternatives
-→ public booking → UI role redesign → tests per vertical → docs/OpenAPI → PR.
+Tests per vertical (concurrency/permissions/money/idempotency/RLS/E2E expansion)
+→ docs/OpenAPI parity + ER regeneration → PR.
 External-credential work stays BLOCKED behind adapter seams (see blockers.md).
 
 ## Invariants (do not regress)

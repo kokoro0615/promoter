@@ -1,0 +1,45 @@
+Phase 4 verification — public booking backend + role-view frontend redesign
+date: 2026-09-19  branch: feat/v5-jp-completion  workdir: nightclub-app
+
+Scope under test
+- Public booking backend: db/migrations/0007_public_booking.sql,
+  src/server/routes/public.ts (GET /api/public/booking-pages/:slug,
+  POST .../submissions -> APPROVAL_PENDING, rate-limited, slug 404s),
+  booking-pages admin routes in vip.ts, registered in app.ts.
+- Frontend redesign: src/web/api.ts (problem+json ApiError, cookie creds,
+  idempotency-key, x-operator-context), styles.css (tabs/floor/status),
+  ui.tsx (Err/Pill/Tabs/Table/useEvents/useCmd/fmt/yen),
+  views: login (dev+email-link+TOTP panel), promoter (register/notifications/
+  performance), kiosk (pair/unlock/entrance/tickets/POS), admin (12 tabs),
+  adminevt (bookings+pages/floor 2D/tickets/inventory/CRM/finance/ops),
+  platform (tenants/plans/billing/operators/usage), publicbook (/book/:slug),
+  App.tsx hash router (book route rendered bare, no nav).
+- Backend read-endpoint additions needed by the UI: vip.ts bookings GET
+  selects b.contact; customers.ts detail returns tags; ops.ts audit-logs
+  returns actor_display via memberships join.
+
+Commands and results (all run, none skipped)
+
+1) pnpm exec tsc --noEmit -p tsconfig.json
+   -> exit 0 (after fixing test cast in publicbook.test.ts)
+
+2) pnpm build   (tsc -p tsconfig.build.json --noEmit && vite build)
+   -> vite v8.3.0: 25 modules, dist built, PWA sw generated. exit 0
+
+3) pnpm test:api   (vitest run tests/api — globalSetup resets+seeds nightclub_test)
+   -> 7 files / 104 tests, all pass
+      r1:16 r2r3:18 vip:8 security:13 v5endpoints:35 authalt:11 publicbook:3
+
+4) pnpm test:e2e   (playwright, auto-starts api+web against seeded dev DB)
+   -> 3/3 pass:
+      login and promoter flow renders        1.6s
+      admin sees events and audit log        1.1s   (tabbed admin: clicks Audit tab)
+      unpaired kiosk asks for pairing code   484ms
+
+5) pnpm verify   (lint + unit + db + api, fresh test DB)
+   -> lint ok; unit 9/9; db/RLS 7/7; api 104/104. exit 0
+
+Notes
+- UI/API contract gaps found by reading route code vs draft views are
+  recorded as F-030..F-032 in findings.json and fixed in this unit.
+- No real external calls: dev PSP only; no real charge/refund/notify.

@@ -6,18 +6,19 @@
   "v5": {
     "branch": "feat/v5-jp-completion",
     "baseline_sha": "58e9438",
-    "phase": "Phase 3d auth-alternatives + PSP seam complete — full regression green",
+    "phase": "Phase 4 public booking + role-view frontend complete — full regression green",
     "audit": "findings.json (30 findings), requirements_registry.json",
     "baseline_results": "unit 9 / db 7 / api 34 / e2e 3 — all pass @58e9438",
     "resume": "docs/execution/resume.md",
-    "latest_results": "unit 9 / db 7 / api 101 (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35 authalt:11) — all pass",
+    "latest_results": "unit 9 / db 7 / api 104 (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35 authalt:11 publicbook:3) / e2e 3 / vite build — all pass",
     "evidence_phase3b": "docs/execution/evidence/phase3b_verify_20260919.txt",
     "evidence_phase3c": "docs/execution/evidence/phase3c_verify_20260919.txt",
-    "evidence_phase3d": "docs/execution/evidence/phase3d_verify_20260919.txt"
+    "evidence_phase3d": "docs/execution/evidence/phase3d_verify_20260919.txt",
+    "evidence_phase4": "docs/execution/evidence/phase4_verify_20260919.txt"
   },
   "current_release": "R1 verified; R2/R3 internal foundations verified",
-  "current_epic": "v5: Phase 4-6 frontend/UI redesign next",
-  "phase": "v5 Phase 3d: 認証代替＋PSP抽象化。email-linkログイン(request/redeem/bind/confirm・202 generic・dev_tokenはDEV_AUTH限定)、TOTP登録/有効化/無効化、recovery codes(hash保存・単一使用)、session step-up(auth_sessions.step_up_at、mfa_state() ACTIVE時のみ金銭コマンド要求: refund.create/execute・settlement_payment.record)、PSP adapter(lib/psp.ts: devpsp実装+stripe seam・未設定時503)。migration 0006で auth_resolve_session+step_up_at・email_link_redeem+email。authalt.test.ts 11件追加。api 101 tests全パス",
+  "current_epic": "v5: Phase 7-8 test expansion + OpenAPI/ER parity next",
+  "phase": "v5 Phase 4: 公開予約フォーム＋役割別UI再設計。booking_pages公開slug参照(SECURITY DEFINER)+APPROVAL_PENDING投稿(0007, public.ts, rate-limit, 404 cleanly)。web: api.ts problem+json化, ui.tsx共有primitive, login(dev/email-link/TOTP), promoter(登録/通知/perf), kiosk(ペア/PIN/入場/ticket redeem/POS), admin(12タブ: events..settings), adminevt(bookings+pages/floor2D/tickets/inventory/CRM/finance/ops), platform, publicbook(#/book/:slug)。backend read追加: bookings.contact, customer detail tags, audit actor_display。F-030..032 contract gap修正。",
   "completed_features": [
     "EP01-04: tenants/stores/users/memberships/roles/permissions, dev-issuer login, invitations, memberships suspend, operator PIN (argon2id), device enrollment/pairing, operator sessions with epoch-based replacement + X-Operator-Context",
     "EP05-08: events + policy versions (publish gate), customers + name/kana search (same-name preserved), visits + admission segments + price-rule adjudication",
@@ -27,7 +28,9 @@
     "EP24/25 (R2 内製範囲): platform_operators, plans, tenant_subscriptions(trial/active/past_due/suspend/cancel), billing_invoices(issue/paid/failed/void), tenant_deletion_requests(schedule/cancel), tenant_onboarding items, usage 集計, store settings PATCH(name/timezone/currency)",
     "EP26 (R3): ticket_products(販売期間/数量/per-order上限), ticket_orders+payments連携, ticket_instances(単方向トークン・hashのみ保持), 入口 redeem→visit+TICKETセグメント+入場済み, 取消→VOID+refund REQUESTED",
     "EP27 (R3): products(BOTTLE/ITEM/PACKAGE), stock_movements(append-only台帳), POS orders(行ロックで売切防止・sales_orders/payments連携), bottle_keeps(OPEN/FINISHED/DISCARDED)",
-    "EP25: export_jobs(visits/payments/audit CSV) + worker 実行 (QUEUED→READY, object_key, 24h expiry, ダウンロード)"
+    "EP25: export_jobs(visits/payments/audit CSV) + worker 実行 (QUEUED→READY, object_key, 24h expiry, ダウンロード)",
+    "公開予約フォーム: booking_pages (slug/タイトル/max_party/collect_phone, OPEN/CLOSED) + 公開GET/投稿(APPROVAL_PENDING, contact保持) + レート制限",
+    "役割別PWA: login/MFA, promoter, kiosk(デバイスペア+PIN+入場+チケット+POS), admin 12タブ, platform console, 公開予約ページ — hash router, 実endpoint接続"
   ],
   "next_tasks": [
     "R2 残: 実課金接続(D-10), tenant import/migration ジョブ実装, branding, 削除実行job",
@@ -43,7 +46,7 @@
     "D-11"
   ],
   "blockers_ref": "docs/execution/blockers.md",
-  "last_verified_commit": "2db9535",
+  "last_verified_commit": "93a4ec2",
   "commands": {
     "verify": "pnpm verify  (lint + test:unit + test:db + test:api)",
     "e2e": "pnpm test:e2e",
