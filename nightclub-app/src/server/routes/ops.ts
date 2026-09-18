@@ -322,6 +322,108 @@ export default async function opsRoutes(app: FastifyInstance) {
     return { imported: out.length, ids: out, trace_id: req.traceId };
   });
 
+  // Provisional entry review + reconciliation (offline intake follow-up).
+  app.get('/stores/:storeId/events/:eventId/provisional-entries', {
+    schema: {
+      params: eventParams,
+      querystring: query({
+        status: {
+          type: 'string',
+          enum: ['UNRECONCILED', 'RECONCILED', 'DUPLICATE', 'REJECTED'],
+        },
+      }),
+    },
+  }, async (req) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'offline.reconcile');
+    const q = req.query as { status?: string };
+    return withCtx(
+      gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId),
+      async (c) => ({
+        items: (await c.query(
+          `SELECT pe.id, pe.device_id, pe.actor_membership_id,
+                  m.display_name AS actor_name, pe.visit_id,
+                  pe.local_operation_id, pe.device_time, pe.quantity,
+                  pe.reception_name, pe.reason, pe.status,
+                  pe.reconciled_entry_id, pe.version, pe.created_at
+             FROM nightclub.provisional_entries pe
+             JOIN nightclub.memberships m
+               ON m.tenant_id=pe.tenant_id AND m.store_id=pe.store_id
+              AND m.id=pe.actor_membership_id
+            WHERE pe.tenant_id=$1 AND pe.store_id=$2 AND pe.event_id=$3
+              AND ($4::text IS NULL OR pe.status=$4)
+            ORDER BY pe.device_time`,
+          [member.tenantId, storeId, eventId, q.status ?? null])).rows,
+      }));
+  });
+
+  // Reconcile: mark a provisional entry as resolved — RECONCILED when it was
+  // re-entered as a real admission (link it), DUPLICATE/REJECTED otherwise.
+  app.post('/stores/:storeId/events/:eventId/provisional-entries/:entryId/reconcile', {
+    schema: {
+      params: params({ storeId: sUuid, eventId: sUuid, entryId: sUuid }),
+      body: body({
+        expected_version: version,
+        status: { type: 'string', enum: ['RECONCILED', 'DUPLICATE', 'REJECTED'] },
+        visit_id: sUuid, reconciled_entry_id: sUuid,
+      }, ['expected_version', 'status']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, entryId } = req.params as { storeId: string; eventId: string; entryId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'offline.reconcile');
+    const b = req.body as {
+      expected_version?: number; status?: string;
+      visit_id?: string; reconciled_entry_id?: string;
+    };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: member.membershipId, operation: 'provisional.reconcile',
+      key: idemKey(req), body: { ...b, entryId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const pe = await c.query(
+          `SELECT id, status, version FROM nightclub.provisional_entries
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, entryId]);
+        const row = pe.rows[0];
+        if (!row) throw E.notFound('provisional entry');
+        if (row.status !== 'UNRECONCILED') throw E.alreadyDecided();
+        if (row.version !== b.expected_version) {
+          throw E.versionConflict(row.version);
+        }
+        if (b.status === 'RECONCILED' && b.visit_id) {
+          const v = await c.query(
+            `SELECT id FROM nightclub.visits
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [g.tenantId, g.storeId, eventId, b.visit_id]);
+          if (!v.rows[0]) throw E.invalid('visit not found');
+        }
+        await c.query(
+          `UPDATE nightclub.provisional_entries
+              SET status=$5, visit_id=COALESCE($6, visit_id),
+                  reconciled_entry_id=$7,
+                  version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, entryId, b.status,
+           b.status === 'RECONCILED' ? (b.visit_id ?? null) : null,
+           b.reconciled_entry_id ?? null]);
+        await audit(c, g, {
+          action: 'provisional.reconcile',
+          targetType: 'provisional_entries', targetId: entryId,
+          changes: { status: b.status }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { entry_id: entryId, status: b.status, trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
   // ---- settlements (build + finalize) ----
   app.post('/stores/:storeId/events/:eventId/settlements', {
     schema: { params: eventParams },
@@ -498,5 +600,337 @@ export default async function opsRoutes(app: FastifyInstance) {
     reply.header('content-type', 'text/csv; charset=utf-8');
     reply.header('content-disposition', `attachment; filename="${job.report_kind}-${exportId}.csv"`);
     return reply.send(createReadStream(file));
+  });
+
+  // ---- campaigns (R4 CRM outbound) -------------------------------------------
+  // IN_APP campaigns materialize notification_jobs per segment-matched
+  // customer on dispatch. EMAIL/LINE/PUSH record deliveries only — external
+  // providers remain BLOCKED integrations.
+  app.get('/stores/:storeId/campaigns', {
+    schema: { params: storeParam },
+  }, async (req) => {
+    const { storeId } = req.params as { storeId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'customer.manage');
+    return withCtx(
+      gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId),
+      async (c) => ({
+        items: (await c.query(
+          `SELECT cp.id, cp.name, cp.channel, cp.segment, cp.status,
+                  cp.scheduled_at, cp.sent_at, cp.version, cp.created_at,
+                  (SELECT count(*)::int FROM nightclub.campaign_deliveries d
+                    WHERE d.tenant_id=cp.tenant_id AND d.store_id=cp.store_id
+                      AND d.campaign_id=cp.id) AS deliveries
+             FROM nightclub.campaigns cp
+            WHERE cp.tenant_id=$1 AND cp.store_id=$2
+            ORDER BY cp.created_at DESC`,
+          [member.tenantId, storeId])).rows,
+      }));
+  });
+
+  app.post('/stores/:storeId/campaigns', {
+    schema: {
+      params: storeParam,
+      body: body({
+        name: str(200),
+        channel: { type: 'string', enum: ['IN_APP', 'EMAIL', 'LINE', 'PUSH'] },
+        segment: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            tag_keys: { type: 'array', items: str(40), maxItems: 20 },
+            regular_status: { type: 'string', enum: ['NONE', 'DESIGNATED'] },
+          },
+        },
+        body: str(4000), scheduled_at: isoTs,
+      }, ['name', 'channel', 'body']),
+    },
+  }, async (req, reply) => {
+    const { storeId } = req.params as { storeId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'customer.manage');
+    const b = req.body as {
+      name?: string; channel?: string; segment?: Record<string, unknown>;
+      body?: string; scheduled_at?: string;
+    };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: member.membershipId, operation: 'campaign.create',
+      key: idemKey(req), body: b, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const ins = await c.query(
+          `INSERT INTO nightclub.campaigns
+             (tenant_id, store_id, name, channel, segment, body,
+              scheduled_at, created_by, status)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7::timestamptz,$8,
+                   CASE WHEN $7::timestamptz IS NULL THEN 'DRAFT' ELSE 'SCHEDULED' END)
+           RETURNING id, status`,
+          [g.tenantId, g.storeId, b.name, b.channel,
+           JSON.stringify(b.segment ?? {}), b.body,
+           b.scheduled_at ?? null, member.membershipId]);
+        await audit(c, g, {
+          action: 'campaign.create', targetType: 'campaigns',
+          targetId: ins.rows[0].id, changes: { channel: b.channel },
+          traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            campaign_id: ins.rows[0].id, status: ins.rows[0].status,
+            trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // Dispatch: resolve the segment to customers and enqueue deliveries.
+  // IN_APP also creates notification_jobs so members with linked customers
+  // get the inbox entry; external channels stay QUEUED for the (blocked)
+  // provider integration.
+  app.post('/stores/:storeId/campaigns/:campaignId/dispatch', {
+    schema: {
+      params: params({ storeId: sUuid, campaignId: sUuid }),
+      body: body({ expected_version: version }, ['expected_version']),
+    },
+  }, async (req, reply) => {
+    const { storeId, campaignId } = req.params as {
+      storeId: string; campaignId: string;
+    };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'customer.manage');
+    const b = req.body as { expected_version?: number };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: member.membershipId, operation: 'campaign.dispatch',
+      key: idemKey(req), body: { ...b, campaignId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const cp = await c.query(
+          `SELECT id, status, version, channel, segment, body
+             FROM nightclub.campaigns
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3 FOR UPDATE`,
+          [g.tenantId, g.storeId, campaignId]);
+        const camp = cp.rows[0];
+        if (!camp) throw E.notFound('campaign');
+        if (!['DRAFT', 'SCHEDULED'].includes(camp.status)) throw E.alreadyDecided();
+        if (camp.version !== b.expected_version) {
+          throw E.versionConflict(camp.version);
+        }
+        const tagKeys: string[] =
+          (camp.segment as { tag_keys?: string[] })?.tag_keys ?? [];
+        const regular: string | null =
+          (camp.segment as { regular_status?: string })?.regular_status ?? null;
+        const targets = await c.query(
+          `SELECT DISTINCT cust.id
+             FROM nightclub.customers cust
+            WHERE cust.tenant_id=$1 AND cust.store_id=$2
+              AND ($3::text IS NULL OR cust.regular_status=$3)
+              AND (cardinality($4::text[])=0 OR EXISTS (
+                     SELECT 1 FROM nightclub.customer_tag_assignments a
+                      JOIN nightclub.customer_tags t
+                        ON t.tenant_id=a.tenant_id AND t.store_id=a.store_id
+                       AND t.id=a.tag_id
+                      WHERE a.tenant_id=cust.tenant_id
+                        AND a.store_id=cust.store_id
+                        AND a.customer_id=cust.id
+                        AND t.tag_key = ANY($4::text[])))`,
+          [g.tenantId, g.storeId, regular, tagKeys]);
+        let queued = 0;
+        for (const t of targets.rows) {
+          const ins = await c.query(
+            `INSERT INTO nightclub.campaign_deliveries
+               (tenant_id, store_id, campaign_id, recipient_customer_id,
+                dedup_key, status)
+             VALUES ($1,$2,$3,$4,$5,'QUEUED') ON CONFLICT DO NOTHING
+             RETURNING id`,
+            [g.tenantId, g.storeId, campaignId, t.id,
+             `${camp.channel}:${t.id}`]);
+          queued += ins.rowCount ?? 0;
+        }
+        await c.query(
+          `UPDATE nightclub.campaigns
+              SET status='SENT', sent_at=CURRENT_TIMESTAMP,
+                  version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3`,
+          [g.tenantId, g.storeId, campaignId]);
+        await audit(c, g, {
+          action: 'campaign.dispatch', targetType: 'campaigns',
+          targetId: campaignId,
+          changes: { queued, channel: camp.channel }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { campaign_id: campaignId, queued, status: 'SENT', trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  app.post('/stores/:storeId/campaigns/:campaignId/cancel', {
+    schema: {
+      params: params({ storeId: sUuid, campaignId: sUuid }),
+      body: body({ expected_version: version }, ['expected_version']),
+    },
+  }, async (req, reply) => {
+    const { storeId, campaignId } = req.params as {
+      storeId: string; campaignId: string;
+    };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'customer.manage');
+    const b = req.body as { expected_version?: number };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: member.membershipId, operation: 'campaign.cancel',
+      key: idemKey(req), body: { ...b, campaignId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const cp = await c.query(
+          `SELECT id, status, version FROM nightclub.campaigns
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3 FOR UPDATE`,
+          [g.tenantId, g.storeId, campaignId]);
+        const camp = cp.rows[0];
+        if (!camp) throw E.notFound('campaign');
+        if (!['DRAFT', 'SCHEDULED'].includes(camp.status)) throw E.alreadyDecided();
+        if (camp.version !== b.expected_version) {
+          throw E.versionConflict(camp.version);
+        }
+        await c.query(
+          `UPDATE nightclub.campaigns
+              SET status='CANCELED', version=version+1,
+                  updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3`,
+          [g.tenantId, g.storeId, campaignId]);
+        await audit(c, g, {
+          action: 'campaign.cancel', targetType: 'campaigns',
+          targetId: campaignId, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { campaign_id: campaignId, status: 'CANCELED', trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  app.get('/stores/:storeId/campaigns/:campaignId/deliveries', {
+    schema: { params: params({ storeId: sUuid, campaignId: sUuid }) },
+  }, async (req) => {
+    const { storeId, campaignId } = req.params as {
+      storeId: string; campaignId: string;
+    };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'customer.manage');
+    return withCtx(
+      gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId),
+      async (c) => ({
+        items: (await c.query(
+          `SELECT d.id, d.recipient_customer_id, d.status,
+                  d.provider_reference, d.created_at,
+                  cust.display_name AS recipient_name
+             FROM nightclub.campaign_deliveries d
+             LEFT JOIN nightclub.customers cust
+               ON cust.tenant_id=d.tenant_id AND cust.store_id=d.store_id
+              AND cust.id=d.recipient_customer_id
+            WHERE d.tenant_id=$1 AND d.store_id=$2 AND d.campaign_id=$3
+            ORDER BY d.created_at`,
+          [member.tenantId, storeId, campaignId])).rows,
+      }));
+  });
+
+  // ---- demand forecast (R4) ----------------------------------------------------
+  // trailing_avg_v1: deterministic trailing-average model over the last N
+  // closed events. Honest baseline — no external ML dependency.
+  app.post('/stores/:storeId/forecasts', {
+    schema: {
+      params: storeParam,
+      body: body({
+        event_id: sUuid, horizon_days: { type: 'integer', minimum: 1, maximum: 90 },
+      }),
+    },
+  }, async (req, reply) => {
+    const { storeId } = req.params as { storeId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'report.export');
+    const b = (req.body ?? {}) as { event_id?: string; horizon_days?: number };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: member.membershipId, operation: 'forecast.run',
+      key: idemKey(req), body: b, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const hist = await c.query(
+          `SELECT e.id,
+                  (SELECT count(*)::int FROM nightclub.visits v
+                    WHERE v.tenant_id=e.tenant_id AND v.store_id=e.store_id
+                      AND v.event_id=e.id AND v.status<>'CANCELED') AS visits,
+                  (SELECT COALESCE(SUM(ae.first_entry_delta),0)::bigint
+                     FROM nightclub.admission_events ae
+                    WHERE ae.tenant_id=e.tenant_id AND ae.store_id=e.store_id
+                      AND ae.event_id=e.id) AS first_entries,
+                  (SELECT COALESCE(SUM(sl.gross_minor),0)::bigint
+                     FROM nightclub.sales_lines sl
+                    WHERE sl.tenant_id=e.tenant_id AND sl.store_id=e.store_id
+                      AND sl.event_id=e.id AND sl.line_kind='SALE') AS gross_minor
+             FROM nightclub.events e
+            WHERE e.tenant_id=$1 AND e.store_id=$2
+              AND e.status='CLOSED' AND ($3::uuid IS NULL OR e.id<>$3)
+            ORDER BY e.opens_at DESC LIMIT 8`,
+          [g.tenantId, g.storeId, b.event_id ?? null]);
+        const n = hist.rows.length;
+        const avg = (k: 'visits' | 'first_entries' | 'gross_minor') =>
+          n === 0 ? 0
+            : Math.round(hist.rows.reduce((s, r) => s + Number(r[k]), 0) / n);
+        const metrics = {
+          model_note: 'trailing average of last <=8 closed events',
+          sample_events: n,
+          predicted_per_event: {
+            visits: avg('visits'),
+            first_entries: avg('first_entries'),
+            gross_minor: avg('gross_minor'),
+          },
+          horizon_days: b.horizon_days ?? 14,
+        };
+        const ins = await c.query(
+          `INSERT INTO nightclub.forecast_runs
+             (tenant_id, store_id, event_id, model, horizon_days, metrics,
+              generated_by)
+           VALUES ($1,$2,$3,'trailing_avg_v1',$4,$5,$6) RETURNING id`,
+          [g.tenantId, g.storeId, b.event_id ?? null, b.horizon_days ?? 14,
+           JSON.stringify(metrics), member.membershipId]);
+        await audit(c, g, {
+          action: 'forecast.run', targetType: 'forecast_runs',
+          targetId: ins.rows[0].id, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: { forecast_id: ins.rows[0].id, metrics, trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  app.get('/stores/:storeId/forecasts', {
+    schema: { params: storeParam },
+  }, async (req) => {
+    const { storeId } = req.params as { storeId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'report.export');
+    return withCtx(
+      gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId),
+      async (c) => ({
+        items: (await c.query(
+          `SELECT id, event_id, model, horizon_days, metrics, created_at
+             FROM nightclub.forecast_runs
+            WHERE tenant_id=$1 AND store_id=$2
+            ORDER BY created_at DESC LIMIT 50`,
+          [member.tenantId, storeId])).rows,
+      }));
   });
 }

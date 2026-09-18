@@ -11,7 +11,7 @@ import { nameKey } from '../lib/namekey.js';
 import { uuid, sha256, randomToken } from '../lib/crypto.js';
 import { audit, emit, idemKey, withReceipt } from '../lib/tx.js';
 import {
-  body, eventChild, eventParams, isoTs, minor, str,
+  body, eventChild, eventParams, isoTs, minor, params, str,
   uuid as sUuid, version,
 } from '../lib/schemas.js';
 import { visitSummary } from '../lib/summary.js';
@@ -463,6 +463,226 @@ export default async function ticketRoutes(app: FastifyInstance) {
         return {
           httpStatus: 200,
           body: { visit: summary, ticket_id: ticket.id, trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- order / instance listing + lifecycle (F-027) --------------------------
+  app.get('/stores/:storeId/events/:eventId/ticket-orders', {
+    schema: {
+      params: eventParams,
+      querystring: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['PAID', 'CANCELED', 'REFUNDED'] },
+        },
+      },
+    },
+  }, async (req) => {
+    const { storeId, eventId } = req.params as P;
+    const c0 = await caller(req, storeId, eventId, 'sales.read');
+    const q = req.query as { status?: string };
+    return withCtx(c0.g, async (c) => ({
+      items: (await c.query(
+        `SELECT o.id, o.product_id, p.code AS product_code, p.name AS product_name,
+                o.buyer_name, o.buyer_customer_id, o.quantity, o.amount_minor,
+                o.currency, o.status, o.payment_id, o.version, o.created_at,
+                (SELECT count(*)::int FROM nightclub.ticket_instances ti
+                  WHERE ti.tenant_id=o.tenant_id AND ti.store_id=o.store_id
+                    AND ti.order_id=o.id AND ti.status='REDEEMED') AS redeemed
+           FROM nightclub.ticket_orders o
+           JOIN nightclub.ticket_products p
+             ON p.tenant_id=o.tenant_id AND p.store_id=o.store_id
+            AND p.event_id=o.event_id AND p.id=o.product_id
+          WHERE o.tenant_id=$1 AND o.store_id=$2 AND o.event_id=$3
+            AND ($4::text IS NULL OR o.status=$4)
+          ORDER BY o.created_at DESC`,
+        [c0.g.tenantId, storeId, eventId, q.status ?? null])).rows,
+    }));
+  });
+
+  app.get('/stores/:storeId/events/:eventId/tickets', {
+    schema: {
+      params: eventParams,
+      querystring: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['ISSUED', 'REDEEMED', 'VOID', 'REFUNDED'],
+          },
+          order_id: sUuid,
+        },
+      },
+    },
+  }, async (req) => {
+    const { storeId, eventId } = req.params as P;
+    const c0 = await caller(req, storeId, eventId, 'sales.read');
+    const q = req.query as { status?: string; order_id?: string };
+    return withCtx(c0.g, async (c) => ({
+      items: (await c.query(
+        `SELECT ti.id, ti.order_id, ti.product_id, p.code AS product_code,
+                o.buyer_name, ti.status, ti.redeemed_visit_id, ti.redeemed_at,
+                ti.created_at
+           FROM nightclub.ticket_instances ti
+           JOIN nightclub.ticket_orders o
+             ON o.tenant_id=ti.tenant_id AND o.store_id=ti.store_id
+            AND o.event_id=ti.event_id AND o.id=ti.order_id
+           JOIN nightclub.ticket_products p
+             ON p.tenant_id=ti.tenant_id AND p.store_id=ti.store_id
+            AND p.id=ti.product_id
+          WHERE ti.tenant_id=$1 AND ti.store_id=$2 AND ti.event_id=$3
+            AND ($4::text IS NULL OR ti.status=$4)
+            AND ($5::uuid IS NULL OR ti.order_id=$5)
+          ORDER BY ti.created_at`,
+        [c0.g.tenantId, storeId, eventId, q.status ?? null, q.order_id ?? null])).rows,
+    }));
+  });
+
+  // Reissue: void the current token and mint a new instance for the same
+  // order+product. New token is returned exactly once.
+  app.post('/stores/:storeId/events/:eventId/tickets/:ticketId/reissue', {
+    schema: {
+      params: params({ storeId: sUuid, eventId: sUuid, ticketId: sUuid }),
+      body: body({ reason: str(1000) }),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, ticketId } = req.params as P;
+    const c0 = await caller(req, storeId, eventId, 'event.manage');
+    const b = (req.body ?? {}) as { reason?: string };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'ticket.reissue', key: idemKey(req),
+      body: { ticketId, reason: b.reason ?? null },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const ti = await c.query(
+          `SELECT id, order_id, product_id, status FROM nightclub.ticket_instances
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, ticketId]);
+        const old = ti.rows[0];
+        if (!old) throw E.notFound('ticket');
+        if (old.status !== 'ISSUED') {
+          throw E.invalid(`cannot reissue ${old.status} ticket`);
+        }
+        await c.query(
+          `UPDATE nightclub.ticket_instances SET status='VOID'
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, ticketId]);
+        const token = randomToken();
+        const ni = await c.query(
+          `INSERT INTO nightclub.ticket_instances
+             (tenant_id, store_id, event_id, order_id, product_id, token_hash)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+          [g.tenantId, g.storeId, eventId, old.order_id, old.product_id,
+           sha256(token)]);
+        await audit(c, g, {
+          action: 'ticket.reissue', targetType: 'ticket_instances',
+          targetId: ni.rows[0].id,
+          changes: { voided: ticketId }, reason: b.reason ?? null,
+          traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            ticket_id: ni.rows[0].id, voided_ticket_id: ticketId,
+            token, trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // Revoke a single ISSUED ticket (no refund linkage — refunds go through
+  // the order cancel / refund flow which requires a payment decision).
+  app.post('/stores/:storeId/events/:eventId/tickets/:ticketId/revoke', {
+    schema: {
+      params: params({ storeId: sUuid, eventId: sUuid, ticketId: sUuid }),
+      body: body({ reason: str(1000) }, ['reason']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, ticketId } = req.params as P;
+    const c0 = await caller(req, storeId, eventId, 'event.manage');
+    const b = req.body as { reason?: string };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'ticket.revoke', key: idemKey(req),
+      body: { ticketId, reason: b.reason }, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const ti = await c.query(
+          `SELECT id, status FROM nightclub.ticket_instances
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, ticketId]);
+        const t = ti.rows[0];
+        if (!t) throw E.notFound('ticket');
+        if (t.status !== 'ISSUED') throw E.alreadyDecided();
+        await c.query(
+          `UPDATE nightclub.ticket_instances SET status='VOID'
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, ticketId]);
+        await audit(c, g, {
+          action: 'ticket.revoke', targetType: 'ticket_instances',
+          targetId: ticketId, reason: b.reason ?? null, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { ticket_id: ticketId, status: 'VOID', trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // Product sales window control: pause/resume/close a product.
+  app.patch('/stores/:storeId/events/:eventId/ticket-products/:productId', {
+    schema: {
+      params: params({ storeId: sUuid, eventId: sUuid, productId: sUuid }),
+      body: body({
+        expected_version: version,
+        status: { type: 'string', enum: ['DRAFT', 'ON_SALE', 'PAUSED', 'CLOSED'] },
+      }, ['expected_version', 'status']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, productId } = req.params as P;
+    const c0 = await caller(req, storeId, eventId, 'event.manage');
+    const b = req.body as { expected_version?: number; status?: string };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'ticket_product.update', key: idemKey(req),
+      body: { ...b, productId }, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const p = await c.query(
+          `SELECT id, status, version FROM nightclub.ticket_products
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, productId]);
+        const prod = p.rows[0];
+        if (!prod) throw E.notFound('ticket product');
+        if (prod.status === 'CLOSED') throw E.alreadyDecided();
+        if (prod.version !== b.expected_version) {
+          throw E.versionConflict(prod.version);
+        }
+        await c.query(
+          `UPDATE nightclub.ticket_products SET status=$5,
+              version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, productId, b.status]);
+        await audit(c, g, {
+          action: 'ticket_product.update', targetType: 'ticket_products',
+          targetId: productId, changes: { status: b.status },
+          traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { product_id: productId, status: b.status, trace_id: req.traceId },
         };
       },
     }));

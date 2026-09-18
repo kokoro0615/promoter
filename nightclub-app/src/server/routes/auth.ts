@@ -7,7 +7,7 @@ import { E } from '../lib/errors.js';
 import { hashToken, randomToken, sha256 } from '../lib/crypto.js';
 import { audit } from '../lib/tx.js';
 import {
-  body, params, storeParam, str, uuid as sUuid, version,
+  body, params, query, storeParam, str, uuid as sUuid, version,
 } from '../lib/schemas.js';
 import {
   requirePersonal, requirePerm, gucPersonal,
@@ -326,6 +326,151 @@ export default async function authRoutes(app: FastifyInstance) {
           targetId: membershipId, traceId: req.traceId,
         });
         return { accepted: true, trace_id: req.traceId };
+      });
+  });
+
+  // F-011: list roles with their permission keys (role.manage or
+  // membership.manage — inviters need the catalog to pick a role).
+  app.get('/stores/:storeId/roles', { schema: { params: storeParam } }, async (req) => {
+    const { storeId } = req.params as { storeId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    if (!member.permissions.has('role.manage')
+        && !member.permissions.has('membership.manage')) {
+      throw E.forbidden('role.manage or membership.manage required');
+    }
+    return withCtx(
+      gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId),
+      async (c) => {
+        const r = await c.query(
+          `SELECT r.id, r.role_key, r.name, r.version,
+                  COALESCE((SELECT array_agg(rp.permission_key ORDER BY rp.permission_key)
+                     FROM nightclub.role_permissions rp
+                    WHERE rp.tenant_id=r.tenant_id AND rp.store_id=r.store_id
+                      AND rp.role_id=r.id), '{}') AS permissions
+             FROM nightclub.roles r
+            WHERE r.tenant_id=$1 AND r.store_id=$2
+            ORDER BY r.role_key`,
+          [member.tenantId, storeId]);
+        return { items: r.rows };
+      });
+  });
+
+  // F-012: (re)assign the role set of a membership. Full replacement in one
+  // transaction; expires_at untouched (time-boxed grants keep their expiry).
+  app.put('/stores/:storeId/memberships/:membershipId/roles', {
+    schema: {
+      params: params({ storeId: sUuid, membershipId: sUuid }),
+      body: body({
+        role_ids: { type: 'array', items: sUuid, maxItems: 50 },
+        expected_version: version,
+      }, ['role_ids']),
+    },
+  }, async (req) => {
+    const { storeId, membershipId } = req.params as { storeId: string; membershipId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'membership.manage');
+    const b = req.body as { role_ids?: string[]; expected_version?: number };
+    return withCtx(
+      gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId),
+      async (c) => {
+        const m = await c.query(
+          `UPDATE nightclub.memberships SET version=version+1,
+              updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3 AND version=$4
+            RETURNING version`,
+          [member.tenantId, storeId, membershipId, b.expected_version ?? -1]);
+        if (!m.rows[0]) throw E.versionConflict();
+        const roles = await c.query(
+          `SELECT id FROM nightclub.roles
+            WHERE tenant_id=$1 AND store_id=$2 AND id = ANY($3::uuid[])`,
+          [member.tenantId, storeId, b.role_ids ?? []]);
+        if (roles.rows.length !== new Set(b.role_ids).size) {
+          throw E.invalid('unknown role_id in role_ids');
+        }
+        await c.query(
+          `DELETE FROM nightclub.membership_roles
+            WHERE tenant_id=$1 AND store_id=$2 AND membership_id=$3`,
+          [member.tenantId, storeId, membershipId]);
+        for (const rid of new Set(b.role_ids)) {
+          await c.query(
+            `INSERT INTO nightclub.membership_roles
+               (tenant_id, store_id, membership_id, role_id, granted_by)
+             VALUES ($1,$2,$3,$4,$5)`,
+            [member.tenantId, storeId, membershipId, rid, member.membershipId]);
+        }
+        await audit(c, {
+          scope: 'personal', tenantId: member.tenantId, storeId,
+          memberId: member.membershipId, userId: personal.userId,
+        }, {
+          action: 'membership.roles.set', targetType: 'memberships',
+          targetId: membershipId,
+          changes: { role_ids: b.role_ids }, traceId: req.traceId,
+        });
+        return {
+          resource_id: membershipId, version: m.rows[0].version,
+          status: 'UPDATED', trace_id: req.traceId,
+        };
+      });
+  });
+
+  // F-013: member-facing notification inbox (IN_APP jobs for the caller)
+  // + read acknowledgement via notification_reads (idempotent).
+  app.get('/stores/:storeId/me/notifications', {
+    schema: {
+      params: storeParam,
+      querystring: query({
+        unread_only: { type: 'string', enum: ['true', 'false'] },
+        limit: { type: 'string', pattern: '^[0-9]+$', maxLength: 4 },
+      }),
+    },
+  }, async (req) => {
+    const { storeId } = req.params as { storeId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    const q = req.query as { unread_only?: string; limit?: string };
+    const limit = Math.min(Number(q.limit) || 50, 200);
+    return withCtx(
+      gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId),
+      async (c) => {
+        const r = await c.query(
+          `SELECT j.id, j.event_id, j.channel, j.status, j.scheduled_at,
+                  j.payload, j.created_at, nr.read_at
+             FROM nightclub.notification_jobs j
+             LEFT JOIN nightclub.notification_reads nr
+               ON nr.tenant_id=j.tenant_id AND nr.store_id=j.store_id
+              AND nr.notification_job_id=j.id AND nr.membership_id=$4
+            WHERE j.tenant_id=$1 AND j.store_id=$2
+              AND j.recipient_membership_id=$4 AND j.channel='IN_APP'
+              AND j.status IN ('QUEUED','SENT')
+              AND ($3::boolean IS FALSE OR nr.read_at IS NULL)
+            ORDER BY j.created_at DESC LIMIT $5`,
+          [member.tenantId, storeId, q.unread_only === 'true',
+           member.membershipId, limit]);
+        return { items: r.rows };
+      });
+  });
+
+  app.post('/stores/:storeId/me/notifications/:notificationId/read', {
+    schema: {
+      params: params({ storeId: sUuid, notificationId: sUuid }),
+    },
+  }, async (req) => {
+    const { storeId, notificationId } = req.params as { storeId: string; notificationId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    return withCtx(
+      gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId),
+      async (c) => {
+        const j = await c.query(
+          `SELECT id FROM nightclub.notification_jobs
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3
+              AND recipient_membership_id=$4 AND channel='IN_APP'`,
+          [member.tenantId, storeId, notificationId, member.membershipId]);
+        if (!j.rows[0]) throw E.notFound('notification');
+        await c.query(
+          `INSERT INTO nightclub.notification_reads
+             (tenant_id, store_id, notification_job_id, membership_id)
+           VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+          [member.tenantId, storeId, notificationId, member.membershipId]);
+        return { read: true, trace_id: req.traceId };
       });
   });
 

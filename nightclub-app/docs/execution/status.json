@@ -6,16 +6,17 @@
   "v5": {
     "branch": "feat/v5-jp-completion",
     "baseline_sha": "58e9438",
-    "phase": "Phase 3b complete — security foundation (schemas/CSRF guard/rate limit/headers)",
+    "phase": "Phase 3c endpoint completion in progress — missing routes implemented + regression suite green",
     "audit": "findings.json (30 findings), requirements_registry.json",
     "baseline_results": "unit 9 / db 7 / api 34 / e2e 3 — all pass @58e9438",
     "resume": "docs/execution/resume.md",
-    "latest_results": "unit 9 / db 7 / api 55 (r1:16 r2r3:18 vip:8 security:13) — all pass",
-    "evidence_phase3b": "docs/execution/evidence/phase3b_verify_20260919.txt"
+    "latest_results": "unit 9 / db 7 / api 90 (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35) — all pass",
+    "evidence_phase3b": "docs/execution/evidence/phase3b_verify_20260919.txt",
+    "evidence_phase3c": "docs/execution/evidence/phase3c_verify_20260919.txt"
   },
   "current_release": "R1 verified; R2/R3 internal foundations verified",
   "current_epic": "v5: Phase 3 foundation hardening in progress",
-  "phase": "v5 Phase 3b完了: F-007 runtime schema検証(全12ルートファイル)/F-008 Origin・Fetch Metadataガード/F-009 rate limit/F-021 security headers + security.test.ts 13件追加。api 55 tests全パス。Phase 3c欠落エンドポイントへ移行",
+  "phase": "v5 Phase 3c: 欠落エンドポイント実装（roles/membership roles/通知inbox/customer詳細+tags/event update・duplicate・cancel/policy-versions一覧/visit segments・companions/pass参照/provisional reconcile/orders一覧/quotations/reward statements・disputes・payouts/ticket lifecycle/stocktakes/campaigns/forecasts/platform operators・stores）。migration 0005で events CANCELED + nc_stores system-scope WITH CHECK + 対象DELETE grant。v5endpoints.test.ts 35件追加・全緑。api 90 tests全パス",
   "completed_features": [
     "EP01-04: tenants/stores/users/memberships/roles/permissions, dev-issuer login, invitations, memberships suspend, operator PIN (argon2id), device enrollment/pairing, operator sessions with epoch-based replacement + X-Operator-Context",
     "EP05-08: events + policy versions (publish gate), customers + name/kana search (same-name preserved), visits + admission segments + price-rule adjudication",
@@ -41,7 +42,7 @@
     "D-11"
   ],
   "blockers_ref": "docs/execution/blockers.md",
-  "last_verified_commit": null,
+  "last_verified_commit": "3bb2a49",
   "commands": {
     "verify": "pnpm verify  (lint + test:unit + test:db + test:api)",
     "e2e": "pnpm test:e2e",

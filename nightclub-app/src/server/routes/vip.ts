@@ -604,4 +604,249 @@ export default async function vipRoutes(app: FastifyInstance) {
     reply.code(res.httpStatus);
     return res.body;
   });
+
+  // ---- quotations (private-event / VIP estimates) ----
+  app.get('/stores/:storeId/events/:eventId/quotations', {
+    schema: {
+      params: eventParams,
+      querystring: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['DRAFT', 'ISSUED', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELED'],
+          },
+        },
+      },
+    },
+  }, async (req) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string };
+    const c0 = await caller(req, storeId, 'booking.read', eventId);
+    const q = req.query as { status?: string };
+    return withCtx(c0.g, async (c) => ({
+      items: (await c.query(
+        `SELECT id, booking_id, status, total_minor, currency, valid_until,
+                note, issued_by, issued_at, version, created_at
+           FROM nightclub.quotations
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+            AND ($4::text IS NULL OR status=$4)
+          ORDER BY created_at`,
+        [c0.g.tenantId, storeId, eventId, q.status ?? null])).rows,
+    }));
+  });
+
+  app.get('/stores/:storeId/events/:eventId/quotations/:quotationId', {
+    schema: { params: eventChild('quotationId') },
+  }, async (req) => {
+    const { storeId, eventId, quotationId } = req.params as {
+      storeId: string; eventId: string; quotationId: string;
+    };
+    const c0 = await caller(req, storeId, 'booking.read', eventId);
+    return withCtx(c0.g, async (c) => {
+      const q = await c.query(
+        `SELECT id, booking_id, status, total_minor, currency, valid_until,
+                note, issued_by, issued_at, version, created_at
+           FROM nightclub.quotations
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+        [c0.g.tenantId, storeId, eventId, quotationId]);
+      if (!q.rows[0]) throw E.notFound('quotation');
+      const lines = await c.query(
+        `SELECT id, description, quantity, unit_minor, amount_minor, sort
+           FROM nightclub.quotation_lines
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND quotation_id=$4
+          ORDER BY sort, created_at`,
+        [c0.g.tenantId, storeId, eventId, quotationId]);
+      return { quotation: q.rows[0], lines: lines.rows };
+    });
+  });
+
+  // Create a DRAFT quotation with line items; total is computed server-side.
+  app.post('/stores/:storeId/events/:eventId/quotations', {
+    schema: {
+      params: eventParams,
+      body: body({
+        booking_id: sUuid, valid_until: isoTs, note: str(1000),
+        currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+        lines: {
+          type: 'array', minItems: 1, maxItems: 100,
+          items: {
+            type: 'object', additionalProperties: false,
+            required: ['description', 'quantity', 'unit_minor'],
+            properties: {
+              description: str(200),
+              quantity: { type: 'integer', minimum: 1, maximum: 1000 },
+              unit_minor: minor,
+            },
+          },
+        },
+      }, ['lines']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string };
+    const c0 = await caller(req, storeId, 'booking.create', eventId);
+    const b = req.body as {
+      booking_id?: string; valid_until?: string; note?: string;
+      currency?: string;
+      lines?: { description: string; quantity: number; unit_minor: number }[];
+    };
+    const lines = b?.lines ?? [];
+    if (lines.length === 0) throw E.invalid('lines required');
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'quotation.create', key: idemKey(req), body: b,
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        if (b.booking_id) {
+          const bk = await c.query(
+            `SELECT id FROM nightclub.bookings
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [g.tenantId, g.storeId, eventId, b.booking_id]);
+          if (!bk.rows[0]) throw E.invalid('booking not found');
+        }
+        const total = lines.reduce(
+          (s, l) => s + l.quantity * l.unit_minor, 0);
+        const st = await c.query(
+          `SELECT currency FROM nightclub.stores WHERE tenant_id=$1 AND id=$2`,
+          [g.tenantId, g.storeId]);
+        const ins = await c.query(
+          `INSERT INTO nightclub.quotations
+             (tenant_id, store_id, event_id, booking_id, total_minor, currency,
+              valid_until, note)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+          [g.tenantId, g.storeId, eventId, b.booking_id ?? null, total,
+           (b.currency ?? st.rows[0].currency).slice(0, 3),
+           b.valid_until ?? null, b.note ?? null]);
+        const qid = ins.rows[0].id as string;
+        for (let i = 0; i < lines.length; i++) {
+          const l = lines[i]!;
+          await c.query(
+            `INSERT INTO nightclub.quotation_lines
+               (tenant_id, store_id, event_id, quotation_id, description,
+                quantity, unit_minor, amount_minor, sort)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [g.tenantId, g.storeId, eventId, qid, l.description,
+             l.quantity, l.unit_minor, l.quantity * l.unit_minor, i]);
+        }
+        await audit(c, g, {
+          action: 'quotation.create', targetType: 'quotations', targetId: qid,
+          changes: { total }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: { quotation_id: qid, total_minor: total, status: 'DRAFT', trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // Issue a DRAFT quotation (locks content, records issuer/time).
+  app.post('/stores/:storeId/events/:eventId/quotations/:quotationId/issue', {
+    schema: {
+      params: eventChild('quotationId'),
+      body: body({ expected_version: version, valid_until: isoTs }),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, quotationId } = req.params as {
+      storeId: string; eventId: string; quotationId: string;
+    };
+    const c0 = await caller(req, storeId, 'booking.manage', eventId);
+    const b = (req.body ?? {}) as { expected_version?: number; valid_until?: string };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'quotation.issue', key: idemKey(req),
+      body: { ...b, quotationId }, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const q = await c.query(
+          `SELECT id, status, version FROM nightclub.quotations
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, quotationId]);
+        const row = q.rows[0];
+        if (!row) throw E.notFound('quotation');
+        if (row.status !== 'DRAFT') throw E.alreadyDecided();
+        if (row.version !== b.expected_version) throw E.versionConflict(row.version);
+        await c.query(
+          `UPDATE nightclub.quotations SET status='ISSUED',
+              issued_by=$5, issued_at=CURRENT_TIMESTAMP,
+              valid_until=COALESCE($6, valid_until),
+              version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, quotationId,
+           c0.member.membershipId, b.valid_until ?? null]);
+        await audit(c, g, {
+          action: 'quotation.issue', targetType: 'quotations',
+          targetId: quotationId, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { quotation_id: quotationId, status: 'ISSUED', trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // Customer-facing outcome recorded by staff: ACCEPTED / DECLINED / EXPIRED
+  // / CANCELED. ACCEPTED may link back to the booking for follow-through.
+  app.post('/stores/:storeId/events/:eventId/quotations/:quotationId/transition', {
+    schema: {
+      params: eventChild('quotationId'),
+      body: body({
+        expected_version: version,
+        status: { type: 'string', enum: ['ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELED'] },
+      }, ['expected_version', 'status']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, quotationId } = req.params as {
+      storeId: string; eventId: string; quotationId: string;
+    };
+    const c0 = await caller(req, storeId, 'booking.manage', eventId);
+    const b = req.body as { expected_version?: number; status?: string };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'quotation.transition', key: idemKey(req),
+      body: { ...b, quotationId }, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const q = await c.query(
+          `SELECT id, status, version FROM nightclub.quotations
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, quotationId]);
+        const row = q.rows[0];
+        if (!row) throw E.notFound('quotation');
+        if (row.version !== b.expected_version) throw E.versionConflict(row.version);
+        if (['ACCEPTED', 'DECLINED', 'CANCELED'].includes(row.status)) {
+          throw E.alreadyDecided();
+        }
+        const allowed: Record<string, string[]> = {
+          DRAFT: ['CANCELED'],
+          ISSUED: ['ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELED'],
+          EXPIRED: ['CANCELED'],
+        };
+        if (!(allowed[row.status] ?? []).includes(b.status!)) {
+          throw E.invalid(`cannot transition ${row.status} -> ${b.status}`);
+        }
+        await c.query(
+          `UPDATE nightclub.quotations SET status=$5,
+              version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, quotationId, b.status]);
+        await audit(c, g, {
+          action: 'quotation.transition', targetType: 'quotations',
+          targetId: quotationId, changes: { status: b.status },
+          traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { quotation_id: quotationId, status: b.status, trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
 }

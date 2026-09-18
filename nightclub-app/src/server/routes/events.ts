@@ -11,7 +11,7 @@ import {
   uuid as sUuid, version,
 } from '../lib/schemas.js';
 import {
-  requirePersonal, requirePerm, requireOperator, requireDevice, gucPersonal, gucDevice, gucOperator,
+  requirePersonal, requirePerm, requireDevice, gucPersonal, gucDevice, gucOperator,
 } from '../lib/ctx.js';
 
 const ASSIGNMENT_KINDS = ['REFERRER', 'DESIGNATED_APPROVER', 'ENTRANCE', 'ENTRANCE_APPROVER', 'RESERVATION'];
@@ -110,6 +110,200 @@ export default async function eventRoutes(app: FastifyInstance) {
     return { id: row.id, name: b.name, opens_at: b.opens_at, closes_at: b.closes_at, status: row.status, version: row.version, is_private: b.is_private === true };
   });
 
+  // F-017: update an event while it is still in DRAFT/PUBLISHED (no live
+  // admissions yet). OPEN/RECONCILING/CLOSED/CANCELED events are immutable.
+  app.patch('/stores/:storeId/events/:eventId', {
+    schema: {
+      params: eventParams,
+      body: body({
+        expected_version: version, name: str(200),
+        opens_at: isoTs, closes_at: isoTs, is_private: { type: 'boolean' },
+      }, ['expected_version']),
+    },
+  }, async (req) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'event.manage');
+    const b = req.body as {
+      expected_version?: number; name?: string;
+      opens_at?: string; closes_at?: string; is_private?: boolean;
+    };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    return withCtx(g, async (c) => {
+      const ev = await c.query(
+        `SELECT id, version, status, opens_at, closes_at FROM nightclub.events
+          WHERE tenant_id=$1 AND store_id=$2 AND id=$3 FOR UPDATE`,
+        [member.tenantId, storeId, eventId]);
+      if (!ev.rows[0]) throw E.notFound('event');
+      if (ev.rows[0].version !== b.expected_version) {
+        throw E.versionConflict(ev.rows[0].version);
+      }
+      if (!['DRAFT', 'PUBLISHED'].includes(ev.rows[0].status)) {
+        throw E.invalid(`event is ${ev.rows[0].status}; only DRAFT/PUBLISHED editable`);
+      }
+      const opens = b.opens_at ?? ev.rows[0].opens_at;
+      const closes = b.closes_at ?? ev.rows[0].closes_at;
+      if (new Date(opens) >= new Date(closes)) {
+        throw E.invalid('opens_at must precede closes_at');
+      }
+      const upd = await c.query(
+        `UPDATE nightclub.events SET
+            name=COALESCE($4,name), opens_at=$5, closes_at=$6,
+            is_private=COALESCE($7,is_private),
+            version=version+1, updated_at=CURRENT_TIMESTAMP
+          WHERE tenant_id=$1 AND store_id=$2 AND id=$3
+          RETURNING version`,
+        [member.tenantId, storeId, eventId, b.name ?? null,
+         opens, closes, b.is_private ?? null]);
+      await audit(c, g, {
+        action: 'event.update', targetType: 'events', targetId: eventId,
+        changes: b, traceId: req.traceId,
+      });
+      return {
+        resource_id: eventId, version: upd.rows[0].version,
+        status: 'UPDATED', trace_id: req.traceId,
+      };
+    });
+  });
+
+  // F-017: duplicate an event — new DRAFT event copying draft/published
+  // policy versions (as DRAFT), materialized price rules, and assignments.
+  // Visits/bookings/quota are NOT copied (fresh operating state).
+  app.post('/stores/:storeId/events/:eventId/duplicate', {
+    schema: {
+      params: eventParams,
+      body: body({
+        name: str(200), opens_at: isoTs, closes_at: isoTs,
+      }, ['opens_at', 'closes_at']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'event.manage');
+    const b = req.body as { name?: string; opens_at?: string; closes_at?: string };
+    if (new Date(b.opens_at!) >= new Date(b.closes_at!)) {
+      throw E.invalid('opens_at must precede closes_at');
+    }
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    const out = await withCtx(g, async (c) => {
+      const src = await c.query(
+        `SELECT id, name, is_private FROM nightclub.events
+          WHERE tenant_id=$1 AND store_id=$2 AND id=$3`,
+        [member.tenantId, storeId, eventId]);
+      if (!src.rows[0]) throw E.notFound('event');
+      const ins = await c.query(
+        `INSERT INTO nightclub.events (tenant_id, store_id, name, opens_at, closes_at, is_private)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [member.tenantId, storeId, b.name ?? `${src.rows[0].name} copy`,
+         b.opens_at, b.closes_at, src.rows[0].is_private]);
+      const newId = ins.rows[0].id as string;
+      // Policy versions -> DRAFT copies on the new event (id remap for
+      // price_rules below).
+      const pvs = await c.query(
+        `SELECT id, version, settings, effective_from, effective_to, apply_mode
+           FROM nightclub.policy_versions
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+          ORDER BY version`,
+        [member.tenantId, storeId, eventId]);
+      const pvMap = new Map<string, string>();
+      for (const pv of pvs.rows) {
+        const settings = { ...(pv.settings as Record<string, unknown>), event_id: newId };
+        const ni = await c.query(
+          `INSERT INTO nightclub.policy_versions
+             (tenant_id, store_id, event_id, version, status, settings,
+              effective_from, effective_to, apply_mode)
+           VALUES ($1,$2,$3,$4,'DRAFT',$5,$6,$7,$8) RETURNING id`,
+          [member.tenantId, storeId, newId, pv.version,
+           JSON.stringify(settings), pv.effective_from, pv.effective_to,
+           pv.apply_mode]);
+        pvMap.set(pv.id, ni.rows[0].id);
+      }
+      const prs = await c.query(
+        `SELECT policy_version_id, rule_key, price_kind, amount_minor, currency,
+                entry_from, entry_to, payment_required
+           FROM nightclub.price_rules
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3`,
+        [member.tenantId, storeId, eventId]);
+      for (const r of prs.rows) {
+        const npv = pvMap.get(r.policy_version_id);
+        if (!npv) continue;
+        await c.query(
+          `INSERT INTO nightclub.price_rules
+             (tenant_id, store_id, event_id, policy_version_id, rule_key,
+              price_kind, amount_minor, currency, entry_from, entry_to,
+              payment_required)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [member.tenantId, storeId, newId, npv, r.rule_key, r.price_kind,
+           r.amount_minor, r.currency, r.entry_from, r.entry_to,
+           r.payment_required]);
+      }
+      await c.query(
+        `INSERT INTO nightclub.event_assignments
+           (tenant_id, store_id, event_id, membership_id, assignment_kind,
+            starts_at, ends_at)
+         SELECT tenant_id, store_id, $3, membership_id, assignment_kind,
+                starts_at, ends_at
+           FROM nightclub.event_assignments
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$4`,
+        [member.tenantId, storeId, newId, eventId]);
+      await audit(c, g, {
+        action: 'event.duplicate', targetType: 'events', targetId: newId,
+        changes: { source_event_id: eventId }, traceId: req.traceId,
+      });
+      return { id: newId, name: b.name ?? `${src.rows[0].name} copy` };
+    });
+    reply.code(201);
+    return { event_id: out.id, name: out.name, status: 'DRAFT', trace_id: req.traceId };
+  });
+
+  // F-017: cancel a not-yet-open event. OPEN/RECONCILING events must go
+  // through the close-out flow instead.
+  app.post('/stores/:storeId/events/:eventId/cancel', {
+    schema: {
+      params: eventParams,
+      body: body({ expected_version: version, reason: str(1000) },
+        ['expected_version']),
+    },
+  }, async (req) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string };
+    const { member, personal } = await requirePersonal(req, storeId);
+    requirePerm(member, 'event.manage');
+    const b = req.body as { expected_version?: number; reason?: string };
+    const g = gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId);
+    return withCtx(g, async (c) => {
+      const ev = await c.query(
+        `SELECT id, version, status FROM nightclub.events
+          WHERE tenant_id=$1 AND store_id=$2 AND id=$3 FOR UPDATE`,
+        [member.tenantId, storeId, eventId]);
+      if (!ev.rows[0]) throw E.notFound('event');
+      if (ev.rows[0].version !== b.expected_version) {
+        throw E.versionConflict(ev.rows[0].version);
+      }
+      if (ev.rows[0].status === 'CANCELED') throw E.alreadyDecided();
+      if (!['DRAFT', 'PUBLISHED'].includes(ev.rows[0].status)) {
+        throw E.invalid(`event is ${ev.rows[0].status}; cannot cancel after open`);
+      }
+      const upd = await c.query(
+        `UPDATE nightclub.events SET status='CANCELED', version=version+1,
+            updated_at=CURRENT_TIMESTAMP
+          WHERE tenant_id=$1 AND store_id=$2 AND id=$3 RETURNING version`,
+        [member.tenantId, storeId, eventId]);
+      await audit(c, g, {
+        action: 'event.cancel', targetType: 'events', targetId: eventId,
+        reason: b.reason ?? null, traceId: req.traceId,
+      });
+      await emit(c, g, {
+        eventId, eventType: 'event.canceled', aggregateType: 'event',
+        aggregateId: eventId, aggregateVersion: upd.rows[0].version,
+        payload: {}, traceId: req.traceId,
+      });
+      return {
+        resource_id: eventId, version: upd.rows[0].version,
+        status: 'CANCELED', trace_id: req.traceId,
+      };
+    });
+  });
+
   // Day-of staffing: full replace of an event's assignments.
   app.put('/stores/:storeId/events/:eventId/assignments', {
     schema: {
@@ -195,6 +389,25 @@ export default async function eventRoutes(app: FastifyInstance) {
       return { policy_version_id: p.id, version: p.version, settings: p.settings };
     });
   });
+
+  // All policy versions of the event (draft + published + superseded).
+  app.get('/stores/:storeId/events/:eventId/policy-versions',
+    { schema: { params: eventParams } }, async (req) => {
+      const { storeId, eventId } = req.params as { storeId: string; eventId: string };
+      const { member, personal } = await requirePersonal(req, storeId);
+      requirePerm(member, 'event.read');
+      return withCtx(
+        gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId),
+        async (c) => ({
+          items: (await c.query(
+            `SELECT id, version, status, apply_mode, effective_from, effective_to,
+                    published_by IS NOT NULL AS published, created_at
+               FROM nightclub.policy_versions
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+              ORDER BY version`,
+            [member.tenantId, storeId, eventId])).rows,
+        }));
+    });
 
   // Create a draft policy version.
   app.post('/stores/:storeId/events/:eventId/policy-versions', {
@@ -467,6 +680,4 @@ export default async function eventRoutes(app: FastifyInstance) {
       return r.rows[0];
     });
   });
-
-  void requireOperator; // referenced by later modules via ctx lib
 }

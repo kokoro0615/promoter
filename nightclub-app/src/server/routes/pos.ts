@@ -43,6 +43,7 @@ async function caller(
 
 type P = {
   storeId: string; eventId: string; productId: string; keepId: string;
+  stocktakeId: string;
 };
 
 async function applyMovement(
@@ -448,6 +449,235 @@ export default async function posRoutes(app: FastifyInstance) {
           targetId: keepId, changes: b, traceId: req.traceId,
         });
         return { httpStatus: 200, body: { status: upd.rows[0].status, trace_id: req.traceId } };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- stocktakes (棚卸) ------------------------------------------------------
+  // Open snapshots expected_qty for every stock-tracked product; counts are
+  // recorded per line; closing optionally posts ADJUST movements for deltas.
+  app.post('/stores/:storeId/stocktakes', {
+    schema: {
+      params: storeParam,
+      body: body({ note: str(1000) }),
+    },
+  }, async (req, reply) => {
+    const { storeId } = req.params as P;
+    const c0 = await caller(req, storeId, null, 'sales.record');
+    const b = (req.body ?? {}) as { note?: string };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'stocktake.create', key: idemKey(req), body: b,
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const open = await c.query(
+          `SELECT id FROM nightclub.stocktakes
+            WHERE tenant_id=$1 AND store_id=$2 AND status='OPEN'`,
+          [g.tenantId, g.storeId]);
+        if (open.rows[0]) {
+          throw E.invalid('an OPEN stocktake already exists');
+        }
+        const ins = await c.query(
+          `INSERT INTO nightclub.stocktakes (tenant_id, store_id, started_by, note)
+           VALUES ($1,$2,$3,$4) RETURNING id`,
+          [g.tenantId, g.storeId, c0.member.membershipId, b.note ?? null]);
+        const sid = ins.rows[0].id as string;
+        await c.query(
+          `INSERT INTO nightclub.stocktake_lines
+             (tenant_id, store_id, stocktake_id, product_id, expected_qty)
+           SELECT $1,$2,$3, id, stock_on_hand
+             FROM nightclub.products
+            WHERE tenant_id=$1 AND store_id=$2 AND stock_tracked
+              AND status='ACTIVE'`,
+          [g.tenantId, g.storeId, sid]);
+        await audit(c, g, {
+          action: 'stocktake.create', targetType: 'stocktakes', targetId: sid,
+          traceId: req.traceId,
+        });
+        return { httpStatus: 201, body: { stocktake_id: sid, trace_id: req.traceId } };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  app.get('/stores/:storeId/stocktakes', {
+    schema: { params: storeParam },
+  }, async (req) => {
+    const { storeId } = req.params as P;
+    const c0 = await caller(req, storeId, null, 'sales.read');
+    return withCtx(c0.g, async (c) => ({
+      items: (await c.query(
+        `SELECT s.id, s.status, s.note, s.version, s.created_at, s.closed_at,
+                m.display_name AS started_by_name,
+                (SELECT count(*)::int FROM nightclub.stocktake_lines l
+                  WHERE l.tenant_id=s.tenant_id AND l.store_id=s.store_id
+                    AND l.stocktake_id=s.id) AS lines,
+                (SELECT count(*)::int FROM nightclub.stocktake_lines l
+                  WHERE l.tenant_id=s.tenant_id AND l.store_id=s.store_id
+                    AND l.stocktake_id=s.id AND l.counted_qty IS NOT NULL) AS counted
+           FROM nightclub.stocktakes s
+           JOIN nightclub.memberships m
+             ON m.tenant_id=s.tenant_id AND m.store_id=s.store_id
+            AND m.id=s.started_by
+          WHERE s.tenant_id=$1 AND s.store_id=$2
+          ORDER BY s.created_at DESC`,
+        [c0.g.tenantId, storeId])).rows,
+    }));
+  });
+
+  app.get('/stores/:storeId/stocktakes/:stocktakeId', {
+    schema: { params: params({ storeId: sUuid, stocktakeId: sUuid }) },
+  }, async (req) => {
+    const { storeId, stocktakeId } = req.params as P;
+    const c0 = await caller(req, storeId, null, 'sales.read');
+    return withCtx(c0.g, async (c) => {
+      const s = await c.query(
+        `SELECT id, status, note, version, created_at, closed_at
+           FROM nightclub.stocktakes
+          WHERE tenant_id=$1 AND store_id=$2 AND id=$3`,
+        [c0.g.tenantId, storeId, stocktakeId]);
+      if (!s.rows[0]) throw E.notFound('stocktake');
+      const lines = await c.query(
+        `SELECT l.product_id, p.sku, p.name, l.expected_qty, l.counted_qty,
+                l.counted_at, m.display_name AS counted_by_name
+           FROM nightclub.stocktake_lines l
+           JOIN nightclub.products p
+             ON p.tenant_id=l.tenant_id AND p.store_id=l.store_id
+            AND p.id=l.product_id
+           LEFT JOIN nightclub.memberships m
+             ON m.tenant_id=l.tenant_id AND m.store_id=l.store_id
+            AND m.id=l.counted_by
+          WHERE l.tenant_id=$1 AND l.store_id=$2 AND l.stocktake_id=$3
+          ORDER BY p.sku`,
+        [c0.g.tenantId, storeId, stocktakeId]);
+      return { stocktake: s.rows[0], lines: lines.rows };
+    });
+  });
+
+  // Record physical counts (upsert per product; only while OPEN).
+  app.put('/stores/:storeId/stocktakes/:stocktakeId/lines', {
+    schema: {
+      params: params({ storeId: sUuid, stocktakeId: sUuid }),
+      body: body({
+        counts: {
+          type: 'array', minItems: 1, maxItems: 500,
+          items: {
+            type: 'object', additionalProperties: false,
+            required: ['product_id', 'counted_qty'],
+            properties: {
+              product_id: sUuid,
+              counted_qty: { type: 'integer', minimum: 0 },
+            },
+          },
+        },
+      }, ['counts']),
+    },
+  }, async (req, reply) => {
+    const { storeId, stocktakeId } = req.params as P;
+    const c0 = await caller(req, storeId, null, 'sales.record');
+    const b = req.body as { counts?: { product_id: string; counted_qty: number }[] };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'stocktake.count', key: idemKey(req),
+      body: { ...b, stocktakeId }, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const s = await c.query(
+          `SELECT id, status FROM nightclub.stocktakes
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3 FOR UPDATE`,
+          [g.tenantId, g.storeId, stocktakeId]);
+        if (!s.rows[0]) throw E.notFound('stocktake');
+        if (s.rows[0].status !== 'OPEN') throw E.alreadyDecided();
+        for (const line of b.counts!) {
+          const u = await c.query(
+            `UPDATE nightclub.stocktake_lines
+                SET counted_qty=$5, counted_by=$6, counted_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND stocktake_id=$3
+                AND product_id=$4`,
+            [g.tenantId, g.storeId, stocktakeId, line.product_id,
+             line.counted_qty, c0.member.membershipId]);
+          if (u.rowCount === 0) {
+            throw E.invalid(`product ${line.product_id} not in stocktake`);
+          }
+        }
+        return { httpStatus: 200, body: { recorded: b.counts!.length, trace_id: req.traceId } };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // Close (or cancel). Closing with apply_adjustments=true posts an ADJUST
+  // stock movement per counted line where counted_qty != expected_qty.
+  app.post('/stores/:storeId/stocktakes/:stocktakeId/transition', {
+    schema: {
+      params: params({ storeId: sUuid, stocktakeId: sUuid }),
+      body: body({
+        expected_version: version,
+        status: { type: 'string', enum: ['CLOSED', 'CANCELED'] },
+        apply_adjustments: { type: 'boolean' },
+      }, ['expected_version', 'status']),
+    },
+  }, async (req, reply) => {
+    const { storeId, stocktakeId } = req.params as P;
+    const c0 = await caller(req, storeId, null, 'sales.record');
+    const b = req.body as {
+      expected_version?: number; status?: string; apply_adjustments?: boolean;
+    };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'stocktake.transition', key: idemKey(req),
+      body: { ...b, stocktakeId }, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const s = await c.query(
+          `SELECT id, status, version FROM nightclub.stocktakes
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3 FOR UPDATE`,
+          [g.tenantId, g.storeId, stocktakeId]);
+        const st = s.rows[0];
+        if (!st) throw E.notFound('stocktake');
+        if (st.status !== 'OPEN') throw E.alreadyDecided();
+        if (st.version !== b.expected_version) {
+          throw E.versionConflict(st.version);
+        }
+        let adjusted = 0;
+        if (b.status === 'CLOSED' && b.apply_adjustments) {
+          const deltas = await c.query(
+            `SELECT product_id, expected_qty, counted_qty
+               FROM nightclub.stocktake_lines
+              WHERE tenant_id=$1 AND store_id=$2 AND stocktake_id=$3
+                AND counted_qty IS NOT NULL AND counted_qty<>expected_qty`,
+            [g.tenantId, g.storeId, stocktakeId]);
+          for (const d of deltas.rows) {
+            await applyMovement(c, g, {
+              productId: d.product_id, kind: 'ADJUST',
+              quantity: Number(d.counted_qty) - Number(d.expected_qty),
+              ref: `stocktake:${stocktakeId}`,
+              createdBy: c0.member.membershipId, operationId: uuid(),
+            });
+            adjusted++;
+          }
+        }
+        await c.query(
+          `UPDATE nightclub.stocktakes
+              SET status=$4, closed_by=$5,
+                  closed_at=CASE WHEN $4='CLOSED' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                  version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3`,
+          [g.tenantId, g.storeId, stocktakeId, b.status, c0.member.membershipId]);
+        await audit(c, g, {
+          action: 'stocktake.transition', targetType: 'stocktakes',
+          targetId: stocktakeId,
+          changes: { status: b.status, adjusted }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { status: b.status, adjusted, trace_id: req.traceId },
+        };
       },
     }));
     reply.code(res.httpStatus);
