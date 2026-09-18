@@ -9,6 +9,7 @@ import { hashToken } from './crypto.js';
 
 export interface PersonalCtx {
   sessionId: string; userId: string; expiresAt: Date;
+  stepUpAt: Date | null;
 }
 export interface DeviceCtx {
   sessionId: string; deviceId: string; tenantId: string; storeId: string;
@@ -44,7 +45,10 @@ export class ReqAuth {
         const s = r.rows[0];
         if (!s || s.revoked_at || s.user_status !== 'ACTIVE') return null;
         if (new Date(s.expires_at) <= new Date()) return null;
-        return { sessionId: s.session_id, userId: s.user_id, expiresAt: s.expires_at };
+        return {
+          sessionId: s.session_id, userId: s.user_id,
+          expiresAt: s.expires_at, stepUpAt: s.step_up_at ?? null,
+        };
       });
     })());
   }
@@ -158,6 +162,22 @@ export async function memberInStore(
 
 export function requirePerm(m: MemberCtx, perm: string) {
   if (!m.permissions.has(perm)) throw E.forbidden(`missing ${perm}`);
+}
+
+// Step-up gate for money-sensitive operations. Enforced only when the user
+// has an ACTIVE TOTP credential: if MFA is enrolled, the session must have
+// stepped up within the freshness window. Users without MFA are unaffected
+// (mandatory-enrollment rollout is a documented policy decision).
+export async function requireStepUpIfEnrolled(
+  c: Client, personal: PersonalCtx, windowSec: number,
+) {
+  // mfa_state() is bound to ctx_user() — call inside a ctx that has userId set.
+  const r = await c.query('SELECT status FROM nightclub.mfa_state()', []);
+  if (!r.rows.some((row) => row.status === 'ACTIVE')) return;
+  if (!personal.stepUpAt
+      || Date.now() - personal.stepUpAt.getTime() > windowSec * 1000) {
+    throw E.forbidden('step-up authentication required');
+  }
 }
 
 // Personal-auth route helper: resolve session + membership in :storeId.

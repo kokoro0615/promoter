@@ -1,0 +1,93 @@
+$ pnpm lint && pnpm test:unit && pnpm test:db && pnpm test:api
+$ tsc --noEmit -p tsconfig.json
+$ vitest run tests/unit
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90m/home/kokoro/projects/clients/promoter/nightclub-app[39m
+
+DO
+createdb: error: database creation failed: ERROR:  database "nightclub_dev" already exists
+createdb: error: database creation failed: ERROR:  database "nightclub_test" already exists
+devdb ready: postgresql://postgres@127.0.0.1:55432/nightclub_dev
+reset: dropping schema nightclub + bookkeeping
+applying 0001_reference_base.sql ...
+applied  0001_reference_base.sql (2101ms)
+applying 0002_app_runtime.sql ...
+applied  0002_app_runtime.sql (166ms)
+applying 0003_r2_r3.sql ...
+applied  0003_r2_r3.sql (325ms)
+applying 0004_v5_completion.sql ...
+applied  0004_v5_completion.sql (277ms)
+done. 4 migration(s) recorded.
+seeded. ids -> devdb/seed.json
+ [32m✓[39m tests/unit/crypto.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/namekey.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+[2m   Start at [22m 05:36:12
+[2m   Duration [22m 5.47s[2m (transform 46%, import 32%, tests 12%, worker 9%)[22m
+
+$ vitest run tests/db
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90m/home/kokoro/projects/clients/promoter/nightclub-app[39m
+
+DO
+createdb: error: database creation failed: ERROR:  database "nightclub_dev" already exists
+createdb: error: database creation failed: ERROR:  database "nightclub_test" already exists
+devdb ready: postgresql://postgres@127.0.0.1:55432/nightclub_dev
+reset: dropping schema nightclub + bookkeeping
+applying 0001_reference_base.sql ...
+applied  0001_reference_base.sql (2073ms)
+applying 0002_app_runtime.sql ...
+applied  0002_app_runtime.sql (146ms)
+applying 0003_r2_r3.sql ...
+applied  0003_r2_r3.sql (286ms)
+applying 0004_v5_completion.sql ...
+applied  0004_v5_completion.sql (340ms)
+done. 4 migration(s) recorded.
+seeded. ids -> devdb/seed.json
+ [32m✓[39m tests/db/rls.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 253[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m7 passed[39m[22m[90m (7)[39m
+[2m   Start at [22m 05:36:19
+[2m   Duration [22m 5.46s[2m (tests 72%, import 16%, transform 10%, worker 2%)[22m
+
+$ vitest run tests/api
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90m/home/kokoro/projects/clients/promoter/nightclub-app[39m
+
+DO
+createdb: error: database creation failed: ERROR:  database "nightclub_dev" already exists
+createdb: error: database creation failed: ERROR:  database "nightclub_test" already exists
+devdb ready: postgresql://postgres@127.0.0.1:55432/nightclub_dev
+reset: dropping schema nightclub + bookkeeping
+applying 0001_reference_base.sql ...
+applied  0001_reference_base.sql (2356ms)
+applying 0002_app_runtime.sql ...
+applied  0002_app_runtime.sql (164ms)
+applying 0003_r2_r3.sql ...
+applied  0003_r2_r3.sql (322ms)
+applying 0004_v5_completion.sql ...
+applied  0004_v5_completion.sql (316ms)
+done. 4 migration(s) recorded.
+seeded. ids -> devdb/seed.json
+[90mstdout[2m | tests/api/r2r3.test.ts[2m > [22m[2mEP25 export jobs[2m > [22m[2mqueued export is executed by worker and downloadable
+[22m[39m[worker] outbox=3 notifications=0 expired=0 exports=1
+
+ [32m✓[39m tests/api/r2r3.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 2274[2mms[22m[39m
+ [32m✓[39m tests/api/r1.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 1881[2mms[22m[39m
+   [32m✓[39m R1 slice [2m(16)[22m
+     [33m[2m✓[22m[39m operator unlock: wrong PIN rejected, right PIN opens a session[33m 312[2mms[22m[39m
+ [32m✓[39m tests/api/vip.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 1149[2mms[22m[39m
+ [32m✓[39m tests/api/security.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 1083[2mms[22m[39m
+   [32m✓[39m F-021 security headers [2m(1)[22m
+     [33m[2m✓[22m[39m sets baseline headers on API responses[33m 489[2mms[22m[39m
+   [32m✓[39m F-009 rate limiting [2m(1)[22m
+     [33m[2m✓[22m[39m throttles repeated credential endpoint hits with 429[33m 492[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+[2m      Tests [22m [1m[32m55 passed[39m[22m[90m (55)[39m
+[2m   Start at [22m 05:36:26
+[2m   Duration [22m 13.92s[2m (tests 81%, import 10%, transform 8%)[22m
+

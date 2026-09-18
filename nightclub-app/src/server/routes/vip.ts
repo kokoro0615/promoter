@@ -1,13 +1,17 @@
 // VIP slice: floor maps, tables, bookings, allocation (exclusion constraint),
 // dev checkout adapter + signed dev webhook, decisions, move, cancel.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { createHmac } from 'node:crypto';
 import { config } from '../config.js';
 import type { Guc } from '../lib/db.js';
 import { withCtx, withSystem } from '../lib/db.js';
 import { E } from '../lib/errors.js';
 import { uuid, sha256 } from '../lib/crypto.js';
+import { getProvider } from '../lib/psp.js';
 import { audit, emit, idemKey, withReceipt } from '../lib/tx.js';
+import {
+  body, eventChild, eventParams, int, isoTs, minor, params, storeParam,
+  str, uuid as sUuid, version,
+} from '../lib/schemas.js';
 import {
   requirePersonal, requireOperator, requirePerm, type MemberCtx, type OperatorCtx, gucPersonal, gucOperator,
 } from '../lib/ctx.js';
@@ -28,13 +32,14 @@ async function caller(req: FastifyRequest, storeId: string, perm: string, eventI
   return { g: gucPersonal(personal.userId, member.tenantId, storeId, member.membershipId), member };
 }
 
-// devpsp: deterministic dev signature. Real PSP = D-05 gated.
-const devSign = (ref: string, result: string) =>
-  createHmac('sha256', config.snapshotSecret).update(`devpsp:${ref}:${result}`).digest('hex');
-
 export default async function vipRoutes(app: FastifyInstance) {
   // ---- floor inventory ----
-  app.post('/stores/:storeId/floor-maps', async (req, reply) => {
+  app.post('/stores/:storeId/floor-maps', {
+    schema: {
+      params: storeParam,
+      body: body({ layout: { type: 'object' }, status: str(32) }, ['layout']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'floor.manage');
@@ -59,7 +64,7 @@ export default async function vipRoutes(app: FastifyInstance) {
     return { floor_map_id: row.id, version: row.version, trace_id: req.traceId };
   });
 
-  app.get('/stores/:storeId/floor', async (req) => {
+  app.get('/stores/:storeId/floor', { schema: { params: storeParam } }, async (req) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'event.read');
@@ -76,7 +81,15 @@ export default async function vipRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/stores/:storeId/tables', async (req, reply) => {
+  app.post('/stores/:storeId/tables', {
+    schema: {
+      params: storeParam,
+      body: body({
+        table_code: str(64), zone: str(64),
+        capacity_min: int, capacity_max: int,
+      }, ['table_code', 'zone', 'capacity_min', 'capacity_max']),
+    },
+  }, async (req, reply) => {
     const { storeId } = req.params as { storeId: string };
     const { member, personal } = await requirePersonal(req, storeId);
     requirePerm(member, 'floor.manage');
@@ -105,14 +118,15 @@ export default async function vipRoutes(app: FastifyInstance) {
   });
 
   // ---- bookings ----
-  app.get('/stores/:storeId/events/:eventId/bookings', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/bookings', { schema: { params: eventParams } }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'booking.read', eventId);
     return withCtx(c0.g, async (c) => {
       const r = await c.query(
         `SELECT b.id, b.version, b.visit_id, b.customer_id, b.party_count,
                 b.starts_at, b.ends_at, b.status, b.admission_pricing,
-                b.minimum_minor, b.deposit_minor, b.currency, v.reception_name,
+                b.minimum_minor, b.deposit_minor, b.currency, b.contact,
+                v.reception_name,
                 (SELECT array_agg(t.table_code) FROM nightclub.table_allocations ta
                    JOIN nightclub.venue_tables t
                      ON t.tenant_id=ta.tenant_id AND t.store_id=ta.store_id AND t.id=ta.table_id
@@ -129,7 +143,21 @@ export default async function vipRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/stores/:storeId/events/:eventId/bookings', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/bookings', {
+    schema: {
+      params: eventParams,
+      body: body({
+        visit_id: sUuid, customer_id: sUuid,
+        party_count: { type: 'integer', minimum: 1 },
+        starts_at: isoTs, ends_at: isoTs,
+        admission_pricing: { type: 'string', enum: ['INCLUDED', 'SEPARATE'] },
+        minimum_minor: minor, deposit_minor: minor,
+        table_ids: { type: 'array', items: sUuid, maxItems: 20 },
+        approval_required: { type: 'boolean' },
+        reception_name: str(200),
+      }, ['party_count', 'starts_at', 'ends_at', 'minimum_minor', 'deposit_minor']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'booking.create', eventId);
     const b = req.body as {
@@ -195,7 +223,131 @@ export default async function vipRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/decision', async (req, reply) => {
+  // ---- public booking pages (admin side; public read/post is routes/public.ts)
+  app.get('/stores/:storeId/events/:eventId/booking-pages', {
+    schema: { params: eventParams },
+  }, async (req) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
+    const c0 = await caller(req, storeId, 'booking.manage', eventId);
+    return withCtx(c0.g, async (c) => ({
+      items: (await c.query(
+        `SELECT id, slug, status, title, message, collect_phone, max_party,
+                version, created_at
+           FROM nightclub.booking_pages
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+          ORDER BY created_at`,
+        [c0.g.tenantId, storeId, eventId])).rows,
+    }));
+  });
+
+  app.post('/stores/:storeId/events/:eventId/booking-pages', {
+    schema: {
+      params: eventParams,
+      body: body({
+        slug: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{2,62}$' },
+        title: str(200), message: str(2000),
+        collect_phone: { type: 'boolean' },
+        max_party: { type: 'integer', minimum: 1, maximum: 200 },
+      }, ['title']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
+    const c0 = await caller(req, storeId, 'booking.manage', eventId);
+    const b = req.body as {
+      slug?: string; title?: string; message?: string;
+      collect_phone?: boolean; max_party?: number;
+    };
+    if (!b?.title) throw E.invalid('title required');
+    const slug = b.slug ?? `bp-${uuid().slice(0, 12)}`;
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'booking_page.create', key: idemKey(req), body: b,
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        let ins;
+        try {
+          ins = await c.query(
+            `INSERT INTO nightclub.booking_pages
+               (tenant_id, store_id, event_id, slug, title, message,
+                collect_phone, max_party)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, slug`,
+            [g.tenantId, g.storeId, eventId, slug, b.title, b.message ?? null,
+             b.collect_phone ?? true, b.max_party ?? 10]);
+        } catch (e) {
+          if ((e as { code?: string }).code === '23505') {
+            throw E.conflict('slug already in use');
+          }
+          throw e;
+        }
+        await audit(c, g, {
+          action: 'booking_page.create', targetType: 'booking_pages',
+          targetId: ins.rows[0].id, changes: { slug }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            page_id: ins.rows[0].id, slug: ins.rows[0].slug,
+            url: `/#/book/${ins.rows[0].slug}`, trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  app.post('/stores/:storeId/events/:eventId/booking-pages/:pageId/status', {
+    schema: {
+      params: params({
+        storeId: sUuid, eventId: sUuid, pageId: sUuid,
+      }),
+      body: body({
+        status: { type: 'string', enum: ['OPEN', 'CLOSED'] },
+        expected_version: version,
+      }, ['status']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, pageId } = req.params as { storeId: string; eventId: string; pageId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
+    const c0 = await caller(req, storeId, 'booking.manage', eventId);
+    const b = req.body as { status?: string; expected_version?: number };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'booking_page.status', key: idemKey(req), body: { ...b, pageId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const r = await c.query(
+          `UPDATE nightclub.booking_pages SET status=$5, version=version+1,
+              updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+              AND version=$6 RETURNING version`,
+          [g.tenantId, g.storeId, eventId, pageId, b.status,
+           b.expected_version ?? -1]);
+        if (!r.rows[0]) throw E.versionConflict();
+        await audit(c, g, {
+          action: 'booking_page.status', targetType: 'booking_pages',
+          targetId: pageId, changes: { status: b.status }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { page_id: pageId, status: b.status, version: r.rows[0].version, trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/decision', {
+    schema: {
+      params: eventChild('bookingId'),
+      body: body({
+        decision: { type: 'string', enum: ['APPROVED', 'REJECTED'] },
+        reason: str(1000), expected_version: version,
+      }, ['decision']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, bookingId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'booking.approve', eventId);
     const b = req.body as { decision?: string; reason?: string; expected_version?: number };
@@ -258,7 +410,9 @@ export default async function vipRoutes(app: FastifyInstance) {
 
   // Deposit checkout via the dev PSP adapter. Provider-independent contract:
   // returns a checkout_url the client opens; result arrives via webhook only.
-  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/checkout', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/checkout', {
+    schema: { params: eventChild('bookingId') },
+  }, async (req, reply) => {
     const { storeId, eventId, bookingId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'payment.create', eventId);
     const g = c0.g;
@@ -268,7 +422,7 @@ export default async function vipRoutes(app: FastifyInstance) {
       receiptTtlSec: config.ttl.receiptSec,
       run: async () => {
         const bk = await c.query(
-          `SELECT b.id, b.version, b.status, b.deposit_minor, b.currency
+          `SELECT b.id, b.version, b.status, b.deposit_minor, b.currency, b.visit_id
              FROM nightclub.bookings b
             WHERE b.tenant_id=$1 AND b.store_id=$2 AND b.event_id=$3 AND b.id=$4
             FOR UPDATE`, [g.tenantId, g.storeId, eventId, bookingId]);
@@ -277,17 +431,42 @@ export default async function vipRoutes(app: FastifyInstance) {
         if (!['HOLD', 'PAYMENT_PENDING', 'APPROVAL_PENDING'].includes(row.status)) {
           throw E.invalid(`booking ${row.status} not payable`);
         }
-        const ref = `devpsp_${uuid()}`;
+        if (Number(row.deposit_minor) <= 0) throw E.invalid('no deposit required');
+        // Provider abstraction: checkout creation delegates to the PSP
+        // adapter (devpsp today; stripe seam behind config — see lib/psp.ts).
+        const psp = getProvider('devpsp');
+        const co = await psp.createCheckout({
+          amount_minor: Number(row.deposit_minor), currency: row.currency,
+          provider_account: 'dev',
+        });
+        const ref = co.provider_reference;
+        // Deposit is a VIP sale: order + line first so the money trail and
+        // webhook can resolve the booking via payment.order_id -> booking_id.
+        const so = await c.query(
+          `INSERT INTO nightclub.sales_orders
+             (tenant_id, store_id, event_id, kind, visit_id, booking_id, currency, status)
+           VALUES ($1,$2,$3,'VIP',$4,$5,$6,'DRAFT') RETURNING id`,
+          [g.tenantId, g.storeId, eventId, row.visit_id ?? null, bookingId, row.currency]);
+        const orderId = so.rows[0].id as string;
+        const opId = uuid();
+        await c.query(
+          `INSERT INTO nightclub.sales_lines
+             (tenant_id, store_id, event_id, order_id, category,
+              line_kind, description, quantity, gross_minor, tax_minor,
+              currency, source_key)
+           VALUES ($1,$2,$3,$4,'VIP','SALE','booking deposit',1,$5,0,$6,$7)`,
+          [g.tenantId, g.storeId, eventId, orderId,
+           row.deposit_minor, row.currency, `deposit:${bookingId}`]);
         const p = await c.query(
           `INSERT INTO nightclub.payments
              (tenant_id, store_id, event_id, recorded_by, operator_session_id,
               order_id, method, purpose, amount_minor, currency, status,
               provider, provider_account, provider_reference, operation_id)
-           VALUES ($1,$2,$3,$4,$5,NULL,'PSP','DEPOSIT',$6,$7,'CREATED',
-                   'devpsp','dev',$8,$9) RETURNING id`,
+           VALUES ($1,$2,$3,$4,$5,$6,'PSP','DEPOSIT',$7,$8,'CREATED',
+                   $9,$10,$11,$12) RETURNING id`,
           [g.tenantId, g.storeId, eventId, c0.member.membershipId,
-           c0.operator?.sessionId ?? null, row.deposit_minor, row.currency,
-           ref, uuid()]);
+           c0.operator?.sessionId ?? null, orderId, row.deposit_minor,
+           row.currency, co.provider, co.provider_account, ref, opId]);
         await c.query(
           `UPDATE nightclub.bookings SET status='PAYMENT_PENDING',
               version=version+1, updated_at=CURRENT_TIMESTAMP
@@ -301,8 +480,8 @@ export default async function vipRoutes(app: FastifyInstance) {
         return {
           httpStatus: 201,
           body: {
-            checkout_url: `/devpsp/checkout/${ref}`,
-            provider: 'devpsp', provider_reference: ref,
+            checkout_url: co.checkout_url,
+            provider: co.provider, provider_reference: ref,
             state: 'CREATED', trace_id: req.traceId,
           },
         };
@@ -312,67 +491,140 @@ export default async function vipRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  // Dev PSP webhook: signed provider callback -> payment SUCCEEDED ->
-  // booking CONFIRMED. Real PSP signature verification is a D-05 gate.
-  app.post('/integrations/:provider/webhooks', async (req) => {
+  // Provider webhook: adapter verifies the signature and normalizes the
+  // event; the money-side effects below are provider-agnostic. devpsp is
+  // the only live provider; stripe is a config-gated seam (lib/psp.ts).
+  app.post('/integrations/:provider/webhooks', {
+    schema: {
+      params: params({ provider: str(64) }),
+      body: body({
+        provider_reference: str(200),
+        result: { type: 'string', enum: ['success', 'failure'] },
+        signature: str(128), account: str(128),
+      }, ['provider_reference', 'result', 'signature']),
+    },
+  }, async (req) => {
     const { provider } = req.params as { provider: string };
-    if (provider !== 'devpsp') throw E.notFound('provider');
-    const b = req.body as {
-      provider_reference?: string; result?: string; signature?: string;
-      account?: string;
+    const psp = getProvider(provider);
+    const ev = psp.verifyWebhook(req.body);
+    // Phase 1 (bare system scope): locate the payment by its globally-unique
+    // provider reference so tenant/store GUCs can be set for the real work.
+    // Unmatched references are ACKed but recorded nowhere — no tenant exists
+    // to file them under.
+    const found = await withSystem(async (c) => (await c.query(
+      `SELECT tenant_id, store_id, event_id, id, order_id, status
+         FROM nightclub.payments
+        WHERE provider=$2 AND provider_account=$3
+          AND provider_reference=$1`,
+      [ev.provider_reference, ev.provider, ev.provider_account])).rows[0]);
+    if (!found) return { accepted: true, matched: false };
+    const guc = {
+      tenantId: found.tenant_id as string, storeId: found.store_id as string,
     };
-    if (!b?.provider_reference || !b.result || !b.signature) {
-      throw E.invalid('provider_reference, result, signature required');
-    }
-    const expect = devSign(b.provider_reference, b.result);
-    if (expect !== b.signature) throw E.unauthenticated('bad signature');
-    // Idempotent: external_event_id unique per provider account.
+    // Phase 2 (tenant-scoped system tx): dedup insert is the idempotency
+    // gate; everything after it is atomic with the recorded event.
     return withSystem(async (c) => {
-      const seen = await c.query(
-        `SELECT id, status FROM nightclub.integration_events
-          WHERE provider='devpsp' AND provider_account='dev'
-            AND external_event_id=$1`,
-        [`${b.provider_reference}:${b.result}`]);
-      if (seen.rows[0]) return { accepted: true, duplicate: true };
-      const r = await c.query(
-        `UPDATE nightclub.payments SET status=$2, version=version+1,
-            updated_at=CURRENT_TIMESTAMP
-          WHERE provider='devpsp' AND provider_account='dev'
-            AND provider_reference=$1 AND status IN ('CREATED','PROCESSING')
-          RETURNING tenant_id, store_id, event_id, id, order_id`,
-        [b.provider_reference, b.result === 'success' ? 'SUCCEEDED' : 'FAILED']);
-      const payment = r.rows[0];
-      if (payment && b.result === 'success') {
-        await c.query(
-          `UPDATE nightclub.bookings SET status='CONFIRMED', version=version+1,
-              updated_at=CURRENT_TIMESTAMP
-            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
-              AND status='PAYMENT_PENDING'
-              AND id IN (SELECT booking_id FROM nightclub.sales_orders
-                          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
-                            AND id=$4)`,
-          [payment.tenant_id, payment.store_id, payment.event_id, payment.order_id]);
-        // booking-linked payments store order_id NULL; find booking via hold
-        await c.query(
-          `UPDATE nightclub.table_allocations SET status='CONFIRMED',
-              version=version+1, updated_at=CURRENT_TIMESTAMP
-            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND status='HELD'`,
-          [payment.tenant_id, payment.store_id, payment.event_id]);
-      }
-      await c.query(
+      const dup = await c.query(
         `INSERT INTO nightclub.integration_events
            (tenant_id, store_id, provider, provider_account, external_event_id,
             payload_hash, payload, status)
-         VALUES ($1,$2,'devpsp','dev',$3,$4,$5,'PROCESSED')`,
-        [payment?.tenant_id ?? '00000000-0000-0000-0000-000000000000',
-         payment?.store_id ?? '00000000-0000-0000-0000-000000000000',
-         `${b.provider_reference}:${b.result}`,
-         sha256(JSON.stringify(b)), JSON.stringify(b)]);
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'PROCESSED')
+         ON CONFLICT (provider, provider_account, external_event_id)
+         DO NOTHING RETURNING id`,
+        [found.tenant_id, found.store_id, ev.provider, ev.provider_account,
+         ev.external_event_id,
+         sha256(JSON.stringify(req.body)), JSON.stringify(req.body)]);
+      if (!dup.rows[0]) return { accepted: true, duplicate: true };
+      const r = await c.query(
+        `UPDATE nightclub.payments SET status=$2, version=version+1,
+            updated_at=CURRENT_TIMESTAMP
+          WHERE tenant_id=$3 AND store_id=$4 AND id=$1
+            AND status IN ('CREATED','PROCESSING')
+          RETURNING event_id, order_id`,
+        [found.id, ev.result === 'success' ? 'SUCCEEDED' : 'FAILED',
+         found.tenant_id, found.store_id]);
+      const payment = r.rows[0];
+      if (!payment) return { accepted: true, duplicate: true };
+      // Resolve the booking through the deposit sales order. Only that
+      // booking's rows are touched — never other bookings' allocations.
+      const bk = await c.query(
+        `SELECT b.id, b.status, b.version FROM nightclub.bookings b
+          JOIN nightclub.sales_orders so
+            ON so.tenant_id=b.tenant_id AND so.store_id=b.store_id
+           AND so.event_id=b.event_id AND so.booking_id=b.id
+          WHERE b.tenant_id=$1 AND b.store_id=$2 AND b.event_id=$3
+            AND so.id=$4 FOR UPDATE OF b`,
+        [found.tenant_id, found.store_id, payment.event_id, payment.order_id]);
+      const booking = bk.rows[0];
+      const g = { scope: 'system' as const, ...guc };
+      if (ev.result === 'success') {
+        if (booking?.status === 'PAYMENT_PENDING') {
+          await c.query(
+            `UPDATE nightclub.bookings SET status='CONFIRMED', version=version+1,
+                updated_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [found.tenant_id, found.store_id, payment.event_id, booking.id]);
+          await c.query(
+            `UPDATE nightclub.sales_orders SET status='FINALIZED', version=version+1,
+                updated_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [found.tenant_id, found.store_id, payment.event_id, payment.order_id]);
+          await c.query(
+            `UPDATE nightclub.table_allocations SET status='CONFIRMED',
+                version=version+1, updated_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+                AND booking_id=$4 AND status='HELD'`,
+            [found.tenant_id, found.store_id, payment.event_id, booking.id]);
+          // Allocate the deposit payment to the deposit sale line.
+          const line = await c.query(
+            `SELECT id, gross_minor, currency FROM nightclub.sales_lines
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+                AND order_id=$4 AND source_key=$5`,
+            [found.tenant_id, found.store_id, payment.event_id,
+             payment.order_id, `deposit:${booking.id}`]);
+          if (line.rows[0]) {
+            await c.query(
+              `INSERT INTO nightclub.payment_allocations
+                 (tenant_id, store_id, event_id, sales_line_id, payment_id,
+                  order_id, amount_minor, currency, operation_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+              [found.tenant_id, found.store_id, payment.event_id,
+               line.rows[0].id, found.id, payment.order_id,
+               line.rows[0].gross_minor, line.rows[0].currency, uuid()]);
+          }
+          await emit(c, g, {
+            eventId: payment.event_id, eventType: 'booking.confirmed',
+            aggregateType: 'booking', aggregateId: booking.id,
+            aggregateVersion: booking.version + 1,
+            payload: { payment_id: found.id }, traceId: req.traceId,
+          });
+        }
+      } else if (booking?.status === 'PAYMENT_PENDING') {
+        await c.query(
+          `UPDATE nightclub.bookings SET status='PAYMENT_EXCEPTION',
+              version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [found.tenant_id, found.store_id, payment.event_id, booking.id]);
+        await emit(c, g, {
+          eventId: payment.event_id, eventType: 'booking.payment_failed',
+          aggregateType: 'booking', aggregateId: booking.id,
+          aggregateVersion: booking.version + 1,
+          payload: { payment_id: found.id }, traceId: req.traceId,
+        });
+      }
       return { accepted: true, duplicate: false };
-    });
+    }, {}, guc);
   });
 
-  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/move', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/move', {
+    schema: {
+      params: eventChild('bookingId'),
+      body: body({
+        table_id: sUuid, starts_at: isoTs, ends_at: isoTs,
+        expected_version: version,
+      }, ['table_id', 'starts_at', 'ends_at']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, bookingId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'booking.manage', eventId);
     const b = req.body as { table_id?: string; starts_at?: string; ends_at?: string; expected_version?: number };
@@ -402,9 +654,10 @@ export default async function vipRoutes(app: FastifyInstance) {
                (tenant_id, store_id, event_id, booking_id, table_id,
                 occupied_during, status)
              VALUES ($1,$2,$3,$4,$5,tstzrange($6,$7,'[)'),
-                     (SELECT status FROM nightclub.bookings
-                       WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
-                       LIMIT 1))`,
+                     CASE WHEN (SELECT status FROM nightclub.bookings
+                                 WHERE tenant_id=$1 AND store_id=$2
+                                   AND event_id=$3 AND id=$4) = 'CONFIRMED'
+                          THEN 'CONFIRMED' ELSE 'HELD' END)`,
             [g.tenantId, g.storeId, eventId, bookingId, b.table_id, b.starts_at, b.ends_at]);
         } catch (e) {
           if ((e as { code?: string }).code === '23P01') throw E.tableUnavailable();
@@ -421,7 +674,12 @@ export default async function vipRoutes(app: FastifyInstance) {
     return res.body;
   });
 
-  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/cancel', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/bookings/:bookingId/cancel', {
+    schema: {
+      params: eventChild('bookingId'),
+      body: body({ expected_version: version, reason: str(1000) }),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, bookingId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const c0 = await caller(req, storeId, 'booking.cancel', eventId);
     const b = (req.body ?? {}) as { expected_version?: number; reason?: string };
@@ -453,6 +711,251 @@ export default async function vipRoutes(app: FastifyInstance) {
           reason: b.reason ?? null, traceId: req.traceId,
         });
         return { httpStatus: 200, body: { booking_id: bookingId, status: 'CANCELED', trace_id: req.traceId } };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- quotations (private-event / VIP estimates) ----
+  app.get('/stores/:storeId/events/:eventId/quotations', {
+    schema: {
+      params: eventParams,
+      querystring: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['DRAFT', 'ISSUED', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELED'],
+          },
+        },
+      },
+    },
+  }, async (req) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string };
+    const c0 = await caller(req, storeId, 'booking.read', eventId);
+    const q = req.query as { status?: string };
+    return withCtx(c0.g, async (c) => ({
+      items: (await c.query(
+        `SELECT id, booking_id, status, total_minor, currency, valid_until,
+                note, issued_by, issued_at, version, created_at
+           FROM nightclub.quotations
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+            AND ($4::text IS NULL OR status=$4)
+          ORDER BY created_at`,
+        [c0.g.tenantId, storeId, eventId, q.status ?? null])).rows,
+    }));
+  });
+
+  app.get('/stores/:storeId/events/:eventId/quotations/:quotationId', {
+    schema: { params: eventChild('quotationId') },
+  }, async (req) => {
+    const { storeId, eventId, quotationId } = req.params as {
+      storeId: string; eventId: string; quotationId: string;
+    };
+    const c0 = await caller(req, storeId, 'booking.read', eventId);
+    return withCtx(c0.g, async (c) => {
+      const q = await c.query(
+        `SELECT id, booking_id, status, total_minor, currency, valid_until,
+                note, issued_by, issued_at, version, created_at
+           FROM nightclub.quotations
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+        [c0.g.tenantId, storeId, eventId, quotationId]);
+      if (!q.rows[0]) throw E.notFound('quotation');
+      const lines = await c.query(
+        `SELECT id, description, quantity, unit_minor, amount_minor, sort
+           FROM nightclub.quotation_lines
+          WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND quotation_id=$4
+          ORDER BY sort, created_at`,
+        [c0.g.tenantId, storeId, eventId, quotationId]);
+      return { quotation: q.rows[0], lines: lines.rows };
+    });
+  });
+
+  // Create a DRAFT quotation with line items; total is computed server-side.
+  app.post('/stores/:storeId/events/:eventId/quotations', {
+    schema: {
+      params: eventParams,
+      body: body({
+        booking_id: sUuid, valid_until: isoTs, note: str(1000),
+        currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+        lines: {
+          type: 'array', minItems: 1, maxItems: 100,
+          items: {
+            type: 'object', additionalProperties: false,
+            required: ['description', 'quantity', 'unit_minor'],
+            properties: {
+              description: str(200),
+              quantity: { type: 'integer', minimum: 1, maximum: 1000 },
+              unit_minor: minor,
+            },
+          },
+        },
+      }, ['lines']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string };
+    const c0 = await caller(req, storeId, 'booking.create', eventId);
+    const b = req.body as {
+      booking_id?: string; valid_until?: string; note?: string;
+      currency?: string;
+      lines?: { description: string; quantity: number; unit_minor: number }[];
+    };
+    const lines = b?.lines ?? [];
+    if (lines.length === 0) throw E.invalid('lines required');
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'quotation.create', key: idemKey(req), body: b,
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        if (b.booking_id) {
+          const bk = await c.query(
+            `SELECT id FROM nightclub.bookings
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [g.tenantId, g.storeId, eventId, b.booking_id]);
+          if (!bk.rows[0]) throw E.invalid('booking not found');
+        }
+        const total = lines.reduce(
+          (s, l) => s + l.quantity * l.unit_minor, 0);
+        const st = await c.query(
+          `SELECT currency FROM nightclub.stores WHERE tenant_id=$1 AND id=$2`,
+          [g.tenantId, g.storeId]);
+        const ins = await c.query(
+          `INSERT INTO nightclub.quotations
+             (tenant_id, store_id, event_id, booking_id, total_minor, currency,
+              valid_until, note)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+          [g.tenantId, g.storeId, eventId, b.booking_id ?? null, total,
+           (b.currency ?? st.rows[0].currency).slice(0, 3),
+           b.valid_until ?? null, b.note ?? null]);
+        const qid = ins.rows[0].id as string;
+        for (let i = 0; i < lines.length; i++) {
+          const l = lines[i]!;
+          await c.query(
+            `INSERT INTO nightclub.quotation_lines
+               (tenant_id, store_id, event_id, quotation_id, description,
+                quantity, unit_minor, amount_minor, sort)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [g.tenantId, g.storeId, eventId, qid, l.description,
+             l.quantity, l.unit_minor, l.quantity * l.unit_minor, i]);
+        }
+        await audit(c, g, {
+          action: 'quotation.create', targetType: 'quotations', targetId: qid,
+          changes: { total }, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: { quotation_id: qid, total_minor: total, status: 'DRAFT', trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // Issue a DRAFT quotation (locks content, records issuer/time).
+  app.post('/stores/:storeId/events/:eventId/quotations/:quotationId/issue', {
+    schema: {
+      params: eventChild('quotationId'),
+      body: body({ expected_version: version, valid_until: isoTs }),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, quotationId } = req.params as {
+      storeId: string; eventId: string; quotationId: string;
+    };
+    const c0 = await caller(req, storeId, 'booking.manage', eventId);
+    const b = (req.body ?? {}) as { expected_version?: number; valid_until?: string };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'quotation.issue', key: idemKey(req),
+      body: { ...b, quotationId }, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const q = await c.query(
+          `SELECT id, status, version FROM nightclub.quotations
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, quotationId]);
+        const row = q.rows[0];
+        if (!row) throw E.notFound('quotation');
+        if (row.status !== 'DRAFT') throw E.alreadyDecided();
+        if (row.version !== b.expected_version) throw E.versionConflict(row.version);
+        await c.query(
+          `UPDATE nightclub.quotations SET status='ISSUED',
+              issued_by=$5, issued_at=CURRENT_TIMESTAMP,
+              valid_until=COALESCE($6, valid_until),
+              version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, quotationId,
+           c0.member.membershipId, b.valid_until ?? null]);
+        await audit(c, g, {
+          action: 'quotation.issue', targetType: 'quotations',
+          targetId: quotationId, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { quotation_id: quotationId, status: 'ISSUED', trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // Customer-facing outcome recorded by staff: ACCEPTED / DECLINED / EXPIRED
+  // / CANCELED. ACCEPTED may link back to the booking for follow-through.
+  app.post('/stores/:storeId/events/:eventId/quotations/:quotationId/transition', {
+    schema: {
+      params: eventChild('quotationId'),
+      body: body({
+        expected_version: version,
+        status: { type: 'string', enum: ['ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELED'] },
+      }, ['expected_version', 'status']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, quotationId } = req.params as {
+      storeId: string; eventId: string; quotationId: string;
+    };
+    const c0 = await caller(req, storeId, 'booking.manage', eventId);
+    const b = req.body as { expected_version?: number; status?: string };
+    const g = c0.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: c0.operator?.sessionId ?? c0.member.membershipId,
+      operation: 'quotation.transition', key: idemKey(req),
+      body: { ...b, quotationId }, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const q = await c.query(
+          `SELECT id, status, version FROM nightclub.quotations
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, quotationId]);
+        const row = q.rows[0];
+        if (!row) throw E.notFound('quotation');
+        if (row.version !== b.expected_version) throw E.versionConflict(row.version);
+        if (['ACCEPTED', 'DECLINED', 'CANCELED'].includes(row.status)) {
+          throw E.alreadyDecided();
+        }
+        const allowed: Record<string, string[]> = {
+          DRAFT: ['CANCELED'],
+          ISSUED: ['ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELED'],
+          EXPIRED: ['CANCELED'],
+        };
+        if (!(allowed[row.status] ?? []).includes(b.status!)) {
+          throw E.invalid(`cannot transition ${row.status} -> ${b.status}`);
+        }
+        await c.query(
+          `UPDATE nightclub.quotations SET status=$5,
+              version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, quotationId, b.status]);
+        await audit(c, g, {
+          action: 'quotation.transition', targetType: 'quotations',
+          targetId: quotationId, changes: { status: b.status },
+          traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { quotation_id: quotationId, status: b.status, trace_id: req.traceId },
+        };
       },
     }));
     reply.code(res.httpStatus);

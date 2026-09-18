@@ -28,7 +28,9 @@
     "test:e2e": "playwright test",
     "lint": "tsc --noEmit -p tsconfig.json",
     "openapi:lint": "redocly lint spec/current/openapi.yaml",
-    "verify": "pnpm lint && pnpm test:unit && pnpm test:db && pnpm test:api"
+    "model:summary": "node tools/model_summary.mjs > docs/execution/model_summary.txt",
+    "verify": "pnpm lint && pnpm test:unit && pnpm test:db && pnpm test:api",
+    "api:parity": "node tools/api_parity.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "11.0.2",

@@ -12,12 +12,15 @@ import type { Guc, Client } from '../lib/db.js';
 import { withCtx } from '../lib/db.js';
 import { E } from '../lib/errors.js';
 import { nameKey } from '../lib/namekey.js';
-import { uuid } from '../lib/crypto.js';
+import { uuid, sha256 } from '../lib/crypto.js';
 import {
   audit, emit, holdQuota, idemKey, withReceipt, publishedPolicy,
   type Policy,
 } from '../lib/tx.js';
 import { visitSummary } from '../lib/summary.js';
+import {
+  body, eventChild, eventParams, params, query, str, uuid as sUuid, version,
+} from '../lib/schemas.js';
 import {
   requirePersonal, requireOperator, requirePerm, eventAssignments, type MemberCtx, type OperatorCtx, type PersonalCtx, gucPersonal, gucOperator,
 } from '../lib/ctx.js';
@@ -103,7 +106,31 @@ function permitMatches(
 
 export default async function visitRoutes(app: FastifyInstance) {
   // ---- visit create ------------------------------------------------------
-  app.post('/stores/:storeId/events/:eventId/visits', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/visits', {
+    schema: {
+      params: eventParams,
+      body: body({
+        reception_name: str(200), reading: str(200),
+        planned_count: { type: 'integer', minimum: 1, maximum: 200 },
+        customer_id: { type: ['string', 'null'], format: 'uuid' },
+        referrer_membership_id: { type: ['string', 'null'], format: 'uuid' },
+        arrival_status: { type: 'string', enum: ['UNKNOWN', 'ON_WAY', 'ARRIVED'] },
+        approval_reason: str(1000),
+        segments: {
+          type: 'array', minItems: 1, maxItems: 50,
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: {
+              rule_key: str(100),
+              count: { type: 'integer', minimum: 1, maximum: 200 },
+              requested_customer_id: { type: ['string', 'null'], format: 'uuid' },
+            },
+            required: ['rule_key', 'count'],
+          },
+        },
+      }, ['reception_name', 'planned_count', 'segments']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string };
     const caller = await visitCaller(req, storeId, eventId, 'visit.create');
     const b = req.body as {
@@ -265,7 +292,16 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // ---- list / get --------------------------------------------------------
-  app.get('/stores/:storeId/events/:eventId/visits', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/visits', {
+    schema: {
+      params: eventParams,
+      querystring: query({
+        status: str(50), q: str(200),
+        limit: { type: 'string', pattern: '^[0-9]+$', maxLength: 4 },
+        cursor: sUuid,
+      }),
+    },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string };
     const q = req.query as { status?: string; q?: string; limit?: string; cursor?: string };
     const caller = await visitCaller(req, storeId, eventId, 'visit.read');
@@ -292,7 +328,9 @@ export default async function visitRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get('/stores/:storeId/events/:eventId/visits/:visitId', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/visits/:visitId', {
+    schema: { params: eventChild('visitId') },
+  }, async (req) => {
     const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'visit.read');
     return withCtx(caller.g, async (c) => {
@@ -302,7 +340,15 @@ export default async function visitRoutes(app: FastifyInstance) {
     });
   });
 
-  app.patch('/stores/:storeId/events/:eventId/visits/:visitId', async (req, reply) => {
+  app.patch('/stores/:storeId/events/:eventId/visits/:visitId', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({
+        expected_version: version, reception_name: str(200),
+        arrival_status: { type: 'string', enum: ['UNKNOWN', 'ON_WAY', 'ARRIVED'] },
+      }, ['expected_version']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'visit.edit');
     const b = req.body as {
@@ -349,7 +395,12 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // Cancel: release only unentered held quota, exactly once.
-  app.post('/stores/:storeId/events/:eventId/visits/:visitId/cancel', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/visits/:visitId/cancel', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({ expected_version: version, reason: str(1000) }),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'visit.cancel');
     const b = (req.body ?? {}) as { expected_version?: number; reason?: string };
@@ -412,7 +463,12 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // ---- approvals ----------------------------------------------------------
-  app.get('/stores/:storeId/events/:eventId/approvals', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/approvals', {
+    schema: {
+      params: eventParams,
+      querystring: query({ status: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED', 'RETURNED', 'SUPERSEDED'] } }),
+    },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'approval.read');
     const q = req.query as { status?: string };
@@ -444,7 +500,16 @@ export default async function visitRoutes(app: FastifyInstance) {
 
   // First valid decision wins. Entrance staff approve normally (no
   // absence/wait/arrival preconditions — policy entrance_regular_approval).
-  app.post('/stores/:storeId/events/:eventId/approvals/:requestId/decisions', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/approvals/:requestId/decisions', {
+    schema: {
+      params: eventChild('requestId'),
+      body: body({
+        expected_request_version: version, expected_segment_version: version,
+        decision: { type: 'string', enum: ['APPROVED', 'REJECTED', 'RETURNED'] },
+        reason: str(1000),
+      }, ['expected_request_version', 'expected_segment_version', 'decision']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, requestId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'approval.decide');
     const b = req.body as {
@@ -576,7 +641,14 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // ---- customer identity check (never implied by name match) --------------
-  app.post('/stores/:storeId/events/:eventId/visits/:visitId/customer-checks', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/visits/:visitId/customer-checks', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({
+        customer_id: sUuid, method: str(50), note: str(1000),
+      }, ['customer_id', 'method']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'entrance.match');
     const b = req.body as { customer_id?: string; method?: string; note?: string };
@@ -637,7 +709,27 @@ export default async function visitRoutes(app: FastifyInstance) {
   });
 
   // ---- entry (partial admission allowed) ----------------------------------
-  app.post('/stores/:storeId/events/:eventId/visits/:visitId/entries', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/visits/:visitId/entries', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({
+        expected_visit_version: version,
+        selections: {
+          type: 'array', minItems: 1, maxItems: 50,
+          items: {
+            type: 'object', additionalProperties: false,
+            properties: {
+              segment_id: sUuid,
+              count: { type: 'integer', minimum: 1, maximum: 200 },
+            },
+            required: ['segment_id', 'count'],
+          },
+        },
+        payment_ids: { type: 'array', maxItems: 50, items: sUuid },
+        pass_id: { type: ['string', 'null'], format: 'uuid' },
+      }, ['expected_visit_version', 'selections']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'entrance.checkin');
     const b = req.body as {
@@ -791,13 +883,534 @@ export default async function visitRoutes(app: FastifyInstance) {
     return res.body;
   });
 
+  // ---- additional segment on an existing visit (F-015) --------------------
+  // Same adjudication path as visit.create (rule -> permit/standard/manual),
+  // locked on the visit row so entry/cancel interleavings stay consistent.
+  app.post('/stores/:storeId/events/:eventId/visits/:visitId/segments', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({
+        expected_visit_version: version,
+        rule_key: str(100),
+        count: { type: 'integer', minimum: 1, maximum: 200 },
+        requested_customer_id: { type: ['string', 'null'], format: 'uuid' },
+        approval_reason: str(1000),
+      }, ['expected_visit_version', 'rule_key', 'count']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string };
+    const caller = await visitCaller(req, storeId, eventId, 'visit.edit');
+    const b = req.body as {
+      expected_visit_version?: number; rule_key?: string; count?: number;
+      requested_customer_id?: string | null; approval_reason?: string;
+    };
+    const g = caller.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: caller.operator?.sessionId ?? caller.member.membershipId,
+      operation: 'visit.segment.add', key: idemKey(req), body: { ...b, visitId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const v = await c.query(
+          `SELECT id, version, status, customer_id, referrer_membership_id
+             FROM nightclub.visits
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, visitId]);
+        const visit = v.rows[0];
+        if (!visit) throw E.notFound('visit');
+        if (visit.status !== 'ACTIVE') throw E.invalid('visit not active');
+        if (visit.version !== b.expected_visit_version) {
+          throw E.versionConflict(visit.version);
+        }
+        const policy = await publishedPolicy(c, g, eventId);
+        if (!policy) throw E.configIncomplete('no published policy');
+        const ps = policy.settings;
+        const rule = ps.price_rules.find((r) => r.rule_key === b.rule_key);
+        if (!rule) throw E.invalid(`unknown rule_key ${b.rule_key}`);
+        const totalPlanned = await c.query(
+          `SELECT planned_count FROM nightclub.visits
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, visitId]);
+        if (b.count! > (totalPlanned.rows[0]?.planned_count ?? 0)) {
+          throw E.invalid('segment count exceeds planned_count');
+        }
+        const requiredCustomer = b.requested_customer_id ?? null;
+        if (requiredCustomer) {
+          const cu = await c.query(
+            `SELECT id FROM nightclub.customers
+              WHERE tenant_id=$1 AND store_id=$2 AND id=$3`,
+            [g.tenantId, g.storeId, requiredCustomer]);
+          if (!cu.rows[0]) throw E.invalid('requested_customer not found');
+        }
+        const isProxy = !!caller.personal
+          && caller.member.permissions.has('visit.proxy')
+          && visit.referrer_membership_id !== caller.member.membershipId;
+        const judged = await judgeSegment(c, g, {
+          eventId, visitId, rule, count: b.count!,
+          requiredCustomer, visitCustomer: visit.customer_id,
+          actorMembership: caller.member.membershipId,
+          referrerId: visit.referrer_membership_id, isProxy,
+          policy: ps, approvalReason: b.approval_reason ?? null,
+          currency: ps.currency,
+        });
+        const seg = await c.query(
+          `INSERT INTO nightclub.admission_segments
+             (tenant_id, store_id, event_id, visit_id, price_rule_id, permit_id,
+              required_customer_id, requested_count, authorized_count,
+              unit_amount_minor, currency, status, authorization_method,
+              snapshot, entry_until)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+           RETURNING id, version`,
+          [g.tenantId, g.storeId, eventId, visitId, judged.priceRuleId,
+           judged.permitId, requiredCustomer, b.count,
+           judged.status === 'AUTHORIZED' ? b.count : 0,
+           rule.amount_minor, ps.currency, judged.status,
+           judged.method, JSON.stringify(judged.snapshot), rule.entry_to]);
+        if (judged.buckets.length && judged.status === 'AUTHORIZED') {
+          await holdQuota(c, g, {
+            eventId, segmentId: seg.rows[0].id,
+            buckets: judged.buckets, count: b.count!,
+          });
+        }
+        if (judged.status === 'PENDING') {
+          await c.query(
+            `INSERT INTO nightclub.approval_requests
+               (tenant_id, store_id, event_id, segment_id, requested_by,
+                request_version, segment_version, reason, status)
+             VALUES ($1,$2,$3,$4,$5,1,$6,$7,'PENDING')`,
+            [g.tenantId, g.storeId, eventId, seg.rows[0].id,
+             caller.member.membershipId, seg.rows[0].version,
+             b.approval_reason ?? 'manual approval required']);
+        }
+        const summary = await visitSummary(c, g, visitId, eventId);
+        await emit(c, g, {
+          eventId, eventType: 'visit.upserted', aggregateType: 'visit',
+          aggregateId: visitId, aggregateVersion: visit.version,
+          payload: { visit: summary }, traceId: req.traceId,
+        });
+        await audit(c, g, {
+          action: 'visit.segment.add', targetType: 'admission_segments',
+          targetId: seg.rows[0].id,
+          changes: { rule_key: b.rule_key, count: b.count },
+          traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            segment_id: seg.rows[0].id, status: judged.status,
+            visit: summary, trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- replace the un-entered portion of a segment with a new request ----
+  // The entered part stays on the original segment; the remainder is revoked
+  // (or truncated) and re-requested under the new rule_key/count, which goes
+  // through the same judge (permit -> authorized, else manual approval).
+  app.post('/stores/:storeId/events/:eventId/segments/:segmentId/replace', {
+    schema: {
+      params: eventChild('segmentId'),
+      body: body({
+        expected_version: version,
+        rule_key: str(40),
+        count: { type: 'integer', minimum: 1, maximum: 200 },
+        reason: str(500),
+      }, ['expected_version', 'rule_key', 'count', 'reason']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, segmentId } = req.params as { storeId: string; eventId: string; segmentId: string };
+    const caller = await visitCaller(req, storeId, eventId, 'visit.edit');
+    const b = req.body as {
+      expected_version?: number; rule_key?: string; count?: number; reason?: string;
+    };
+    const g = caller.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: caller.operator?.sessionId ?? caller.member.membershipId,
+      operation: 'visit.segment.replace', key: idemKey(req),
+      body: { ...b, segmentId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const s = await c.query(
+          `SELECT id, version, status, visit_id, requested_count,
+                  authorized_count, first_entered_count, required_customer_id
+             FROM nightclub.admission_segments
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, segmentId]);
+        const seg = s.rows[0];
+        if (!seg) throw E.notFound('segment');
+        if (seg.version !== b.expected_version) throw E.versionConflict(seg.version);
+        if (seg.status !== 'PENDING' && seg.status !== 'AUTHORIZED') {
+          throw E.invalid(`segment ${seg.status} cannot be replaced`);
+        }
+        const entered = seg.first_entered_count as number;
+        if (seg.requested_count - entered <= 0) {
+          throw E.invalid('no un-entered portion to replace');
+        }
+        const v = await c.query(
+          `SELECT id, version, status, customer_id, referrer_membership_id
+             FROM nightclub.visits
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, seg.visit_id]);
+        const visit = v.rows[0];
+        if (!visit) throw E.notFound('visit');
+        if (visit.status !== 'ACTIVE') throw E.invalid('visit not active');
+        const policy = await publishedPolicy(c, g, eventId);
+        if (!policy) throw E.configIncomplete('no published policy');
+        const ps = policy.settings;
+        const rule = ps.price_rules.find((r) => r.rule_key === b.rule_key);
+        if (!rule) throw E.invalid(`unknown rule_key ${b.rule_key}`);
+        if (seg.status === 'AUTHORIZED') {
+          await releaseHold(c, g, eventId, segmentId,
+            (seg.authorized_count as number) - entered);
+        }
+        await c.query(
+          `UPDATE nightclub.approval_requests SET status='SUPERSEDED',
+              version=version+1, updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+              AND segment_id=$4 AND status='PENDING'`,
+          [g.tenantId, g.storeId, eventId, segmentId]);
+        if (entered === 0) {
+          await c.query(
+            `UPDATE nightclub.admission_segments
+                SET status='REVOKED', authorized_count=0,
+                    version=version+1, updated_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [g.tenantId, g.storeId, eventId, segmentId]);
+        } else {
+          await c.query(
+            `UPDATE nightclub.admission_segments
+                SET requested_count=$5, authorized_count=$5,
+                    version=version+1, updated_at=CURRENT_TIMESTAMP
+              WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+            [g.tenantId, g.storeId, eventId, segmentId, entered]);
+        }
+        const isProxy = !!caller.personal
+          && caller.member.permissions.has('visit.proxy')
+          && visit.referrer_membership_id !== caller.member.membershipId;
+        const judged = await judgeSegment(c, g, {
+          eventId, visitId: seg.visit_id, rule, count: b.count!,
+          requiredCustomer: seg.required_customer_id,
+          visitCustomer: visit.customer_id,
+          actorMembership: caller.member.membershipId,
+          referrerId: visit.referrer_membership_id, isProxy,
+          policy: ps, approvalReason: b.reason ?? null,
+          currency: ps.currency,
+        });
+        const nseg = await c.query(
+          `INSERT INTO nightclub.admission_segments
+             (tenant_id, store_id, event_id, visit_id, price_rule_id, permit_id,
+              required_customer_id, requested_count, authorized_count,
+              unit_amount_minor, currency, status, authorization_method,
+              snapshot, entry_until)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+           RETURNING id, version`,
+          [g.tenantId, g.storeId, eventId, seg.visit_id, judged.priceRuleId,
+           judged.permitId, seg.required_customer_id, b.count,
+           judged.status === 'AUTHORIZED' ? b.count : 0,
+           rule.amount_minor, ps.currency, judged.status,
+           judged.method, JSON.stringify(judged.snapshot), rule.entry_to]);
+        if (judged.buckets.length && judged.status === 'AUTHORIZED') {
+          await holdQuota(c, g, {
+            eventId, segmentId: nseg.rows[0].id,
+            buckets: judged.buckets, count: b.count!,
+          });
+        }
+        if (judged.status === 'PENDING') {
+          await c.query(
+            `INSERT INTO nightclub.approval_requests
+               (tenant_id, store_id, event_id, segment_id, requested_by,
+                request_version, segment_version, reason, status)
+             VALUES ($1,$2,$3,$4,$5,1,$6,$7,'PENDING')`,
+            [g.tenantId, g.storeId, eventId, nseg.rows[0].id,
+             caller.member.membershipId, nseg.rows[0].version,
+             b.reason ?? 'manual approval required']);
+        }
+        const summary = await visitSummary(c, g, seg.visit_id, eventId);
+        await emit(c, g, {
+          eventId, eventType: 'visit.upserted', aggregateType: 'visit',
+          aggregateId: seg.visit_id, aggregateVersion: visit.version,
+          payload: { visit: summary }, traceId: req.traceId,
+        });
+        await audit(c, g, {
+          action: 'visit.segment.replace', targetType: 'admission_segments',
+          targetId: segmentId,
+          changes: {
+            replacement_segment_id: nseg.rows[0].id,
+            rule_key: b.rule_key, count: b.count,
+          },
+          reason: b.reason ?? null, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: {
+            segment_id: nseg.rows[0].id, replaced_segment_id: segmentId,
+            status: judged.status, visit: summary, trace_id: req.traceId,
+          },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- correct the referrer attribution of a visit (reason required) ------
+  // Re-points the visit and any sales_attributions on its order lines to the
+  // new referrer; lines with no attribution gain one when a referrer is set.
+  app.post('/stores/:storeId/events/:eventId/visits/:visitId/attribution', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({
+        expected_version: version,
+        referrer_membership_id: sUuid,
+        reason: str(500),
+      }, ['expected_version', 'referrer_membership_id', 'reason']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string };
+    const caller = await visitCaller(req, storeId, eventId, 'attribution.manage');
+    const b = req.body as {
+      expected_version?: number; referrer_membership_id?: string; reason?: string;
+    };
+    const g = caller.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: caller.operator?.sessionId ?? caller.member.membershipId,
+      operation: 'visit.attribution', key: idemKey(req),
+      body: { ...b, visitId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const v = await c.query(
+          `SELECT id, version, status, referrer_membership_id
+             FROM nightclub.visits
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, visitId]);
+        const visit = v.rows[0];
+        if (!visit) throw E.notFound('visit');
+        if (visit.version !== b.expected_version) {
+          throw E.versionConflict(visit.version);
+        }
+        if (visit.status !== 'ACTIVE') throw E.invalid('visit not active');
+        if (visit.referrer_membership_id === b.referrer_membership_id) {
+          throw E.invalid('attribution unchanged');
+        }
+        const m = await c.query(
+          `SELECT id FROM nightclub.memberships
+            WHERE tenant_id=$1 AND store_id=$2 AND id=$3 AND status='ACTIVE'`,
+          [g.tenantId, g.storeId, b.referrer_membership_id]);
+        if (!m.rows[0]) throw E.invalid('referrer membership not found');
+        const old = visit.referrer_membership_id as string | null;
+        await c.query(
+          `UPDATE nightclub.visits
+              SET referrer_membership_id=$5, version=version+1,
+                  updated_at=CURRENT_TIMESTAMP
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4`,
+          [g.tenantId, g.storeId, eventId, visitId, b.referrer_membership_id]);
+        // Re-point existing line attributions recorded under the old referrer.
+        await c.query(
+          `UPDATE nightclub.sales_attributions sa
+              SET referrer_membership_id=$5, version=sa.version+1,
+                  updated_at=CURRENT_TIMESTAMP
+             FROM nightclub.sales_lines sl
+             JOIN nightclub.sales_orders o
+               ON o.tenant_id=sl.tenant_id AND o.store_id=sl.store_id
+              AND o.event_id=sl.event_id AND o.id=sl.order_id
+            WHERE sa.tenant_id=$1 AND sa.store_id=$2 AND sa.event_id=$3
+              AND sa.sales_line_id=sl.id AND o.visit_id=$4
+              AND sa.referrer_membership_id IS NOT DISTINCT FROM $6`,
+          [g.tenantId, g.storeId, eventId, visitId,
+           b.referrer_membership_id, old]);
+        // Lines without any attribution gain one under the new referrer.
+        // A visit has a single primary referrer -> 100% (basis_points is the
+        // attribution share, not the reward rate; CHECK requires 1..10000).
+        await c.query(
+          `INSERT INTO nightclub.sales_attributions
+             (tenant_id, store_id, event_id, sales_line_id,
+              referrer_membership_id, basis_points, version)
+           SELECT sl.tenant_id, sl.store_id, sl.event_id, sl.id, $4, 10000, 1
+             FROM nightclub.sales_lines sl
+             JOIN nightclub.sales_orders o
+               ON o.tenant_id=sl.tenant_id AND o.store_id=sl.store_id
+              AND o.event_id=sl.event_id AND o.id=sl.order_id
+            WHERE sl.tenant_id=$1 AND sl.store_id=$2 AND sl.event_id=$3
+              AND o.visit_id=$5
+              AND NOT EXISTS (
+                SELECT 1 FROM nightclub.sales_attributions sa
+                 WHERE sa.tenant_id=sl.tenant_id AND sa.store_id=sl.store_id
+                   AND sa.event_id=sl.event_id AND sa.sales_line_id=sl.id)`,
+          [g.tenantId, g.storeId, eventId, b.referrer_membership_id, visitId]);
+        const summary = await visitSummary(c, g, visitId, eventId);
+        await emit(c, g, {
+          eventId, eventType: 'visit.upserted', aggregateType: 'visit',
+          aggregateId: visitId, aggregateVersion: visit.version + 1,
+          payload: { visit: summary }, traceId: req.traceId,
+        });
+        await audit(c, g, {
+          action: 'visit.attribution', targetType: 'visits', targetId: visitId,
+          changes: {
+            referrer_membership_id: { from: old, to: b.referrer_membership_id },
+          },
+          reason: b.reason ?? null, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 200,
+          body: { visit: summary, trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- companion members on a visit (F-015) --------------------------------
+  app.post('/stores/:storeId/events/:eventId/visits/:visitId/members', {
+    schema: {
+      params: eventChild('visitId'),
+      body: body({
+        display_name: str(200),
+        customer_id: { type: ['string', 'null'], format: 'uuid' },
+      }, ['display_name']),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, visitId } = req.params as { storeId: string; eventId: string; visitId: string };
+    const caller = await visitCaller(req, storeId, eventId, 'visit.edit');
+    const b = req.body as { display_name?: string; customer_id?: string | null };
+    const g = caller.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: caller.operator?.sessionId ?? caller.member.membershipId,
+      operation: 'visit.member.add', key: idemKey(req), body: { ...b, visitId },
+      receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const v = await c.query(
+          `SELECT id, status FROM nightclub.visits
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, visitId]);
+        if (!v.rows[0]) throw E.notFound('visit');
+        if (v.rows[0].status !== 'ACTIVE') throw E.invalid('visit not active');
+        if (b.customer_id) {
+          const cu = await c.query(
+            `SELECT id FROM nightclub.customers
+              WHERE tenant_id=$1 AND store_id=$2 AND id=$3`,
+            [g.tenantId, g.storeId, b.customer_id]);
+          if (!cu.rows[0]) throw E.invalid('customer not found');
+        }
+        const ins = await c.query(
+          `INSERT INTO nightclub.visit_members
+             (tenant_id, store_id, event_id, visit_id, customer_id,
+              display_name, member_kind)
+           VALUES ($1,$2,$3,$4,$5,$6,'COMPANION') RETURNING id`,
+          [g.tenantId, g.storeId, eventId, visitId,
+           b.customer_id ?? null, b.display_name]);
+        await audit(c, g, {
+          action: 'visit.member.add', targetType: 'visit_members',
+          targetId: ins.rows[0].id, changes: b, traceId: req.traceId,
+        });
+        return {
+          httpStatus: 201,
+          body: { visit_member_id: ins.rows[0].id, trace_id: req.traceId },
+        };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  app.delete('/stores/:storeId/events/:eventId/visits/:visitId/members/:memberId', {
+    schema: {
+      params: params({
+        storeId: sUuid, eventId: sUuid, visitId: sUuid, memberId: sUuid,
+      }),
+    },
+  }, async (req, reply) => {
+    const { storeId, eventId, visitId, memberId } = req.params as {
+      storeId: string; eventId: string; visitId: string; memberId: string;
+    };
+    const caller = await visitCaller(req, storeId, eventId, 'visit.edit');
+    const g = caller.g;
+    const res = await withCtx(g, async (c) => withReceipt(c, g, {
+      actorKey: caller.operator?.sessionId ?? caller.member.membershipId,
+      operation: 'visit.member.remove', key: idemKey(req),
+      body: { visitId, memberId }, receiptTtlSec: config.ttl.receiptSec,
+      run: async () => {
+        const v = await c.query(
+          `SELECT id, status FROM nightclub.visits
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3 AND id=$4
+            FOR UPDATE`, [g.tenantId, g.storeId, eventId, visitId]);
+        if (!v.rows[0]) throw E.notFound('visit');
+        if (v.rows[0].status !== 'ACTIVE') throw E.invalid('visit not active');
+        const del = await c.query(
+          `DELETE FROM nightclub.visit_members
+            WHERE tenant_id=$1 AND store_id=$2 AND event_id=$3
+              AND visit_id=$4 AND id=$5 AND member_kind='COMPANION'
+            RETURNING id`,
+          [g.tenantId, g.storeId, eventId, visitId, memberId]);
+        if (!del.rows[0]) throw E.notFound('companion member');
+        await audit(c, g, {
+          action: 'visit.member.remove', targetType: 'visit_members',
+          targetId: memberId, traceId: req.traceId,
+        });
+        return { httpStatus: 200, body: { removed: true, trace_id: req.traceId } };
+      },
+    }));
+    reply.code(res.httpStatus);
+    return res.body;
+  });
+
+  // ---- pass lookup for kiosk re-entry scanning (F-016) ----------------------
+  // By QR token (hashed server-side) or by visit. Never exposes token_hash.
+  app.get('/stores/:storeId/events/:eventId/passes', {
+    schema: {
+      params: eventParams,
+      querystring: query({ token: str(200), visit_id: sUuid }),
+    },
+  }, async (req) => {
+    const { storeId, eventId } = req.params as { storeId: string; eventId: string };
+    const caller = await visitCaller(req, storeId, eventId, 'entrance.checkin');
+    const q = req.query as { token?: string; visit_id?: string };
+    if (!q.token && !q.visit_id) throw E.invalid('token or visit_id required');
+    return withCtx(caller.g, async (c) => {
+      const r = await c.query(
+        `SELECT p.id, p.visit_id, p.member_id, p.pass_kind, p.presence,
+                p.expires_at, p.revoked_at IS NOT NULL AS revoked,
+                vm.display_name AS member_name,
+                v.reception_name AS visit_name
+           FROM nightclub.entry_passes p
+           LEFT JOIN nightclub.visit_members vm
+             ON vm.tenant_id=p.tenant_id AND vm.store_id=p.store_id
+            AND vm.event_id=p.event_id AND vm.id=p.member_id
+           JOIN nightclub.visits v
+             ON v.tenant_id=p.tenant_id AND v.store_id=p.store_id
+            AND v.event_id=p.event_id AND v.id=p.visit_id
+          WHERE p.tenant_id=$1 AND p.store_id=$2 AND p.event_id=$3
+            AND ($4::text IS NULL OR p.token_hash=$4)
+            AND ($5::uuid IS NULL OR p.visit_id=$5)
+          ORDER BY p.created_at DESC LIMIT 20`,
+        [caller.g.tenantId, storeId, eventId,
+         q.token ? sha256(q.token) : null, q.visit_id ?? null]);
+      if (q.token && !r.rows[0]) throw E.notFound('pass');
+      return { items: r.rows };
+    });
+  });
+
   // Exit / re-entry via group pass. Re-entry consumes no acquisition quota.
-  app.post('/stores/:storeId/events/:eventId/passes/exit', async (req, reply) => {
-    return passMove(req, reply, 'EXIT');
-  });
-  app.post('/stores/:storeId/events/:eventId/passes/reentry', async (req, reply) => {
-    return passMove(req, reply, 'REENTRY');
-  });
+  const passMoveSchema = {
+    schema: {
+      params: eventParams,
+      body: body({
+        pass_id: sUuid,
+        quantity: { type: 'integer', minimum: 1, maximum: 200 },
+      }, ['pass_id']),
+    },
+  };
+  app.post('/stores/:storeId/events/:eventId/passes/exit', passMoveSchema,
+    async (req, reply) => {
+      return passMove(req, reply, 'EXIT');
+    });
+  app.post('/stores/:storeId/events/:eventId/passes/reentry', passMoveSchema,
+    async (req, reply) => {
+      return passMove(req, reply, 'REENTRY');
+    });
 
   async function passMove(req: FastifyRequest, reply: FastifyReply, kind: 'EXIT' | 'REENTRY') {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
@@ -860,7 +1473,12 @@ export default async function visitRoutes(app: FastifyInstance) {
   }
 
   // Entry correction: append-only compensating entry (manager only).
-  app.post('/stores/:storeId/events/:eventId/entries/:entryId/corrections', async (req, reply) => {
+  app.post('/stores/:storeId/events/:eventId/entries/:entryId/corrections', {
+    schema: {
+      params: eventChild('entryId'),
+      body: body({ reason: str(1000) }, ['reason']),
+    },
+  }, async (req, reply) => {
     const { storeId, eventId, entryId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await visitCaller(req, storeId, eventId, 'entry.correct');
     const b = req.body as { reason?: string };
@@ -1129,9 +1747,11 @@ async function recordAdmissionSale(c: Client, g: Guc, a: {
           AND valid_from <= CURRENT_TIMESTAMP AND valid_to > CURRENT_TIMESTAMP
         ORDER BY referrer_membership_id NULLS LAST LIMIT 1`,
       [g.tenantId, g.storeId, referrer]);
+    // A visit's primary referrer carries the full share when no reward rule
+    // narrows it (CHECK requires basis_points 1..10000).
     const bp = rr.rows[0]
-      ? (rr.rows[0].conditions as { basis_points?: number }).basis_points ?? 0
-      : 0;
+      ? (rr.rows[0].conditions as { basis_points?: number }).basis_points ?? 10000
+      : 10000;
     await c.query(
       `INSERT INTO nightclub.sales_attributions
          (tenant_id, store_id, event_id, sales_line_id, referrer_membership_id,

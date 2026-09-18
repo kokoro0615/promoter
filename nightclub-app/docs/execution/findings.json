@@ -1,0 +1,316 @@
+{
+ "audit": "Phase 1 full review — implementation vs Nightclub v4.0 package + SWE2MAX scope",
+ "audited_at": "2026-09-19",
+ "audited_sha": "58e9438",
+ "findings": [
+  {
+   "id": "F-001",
+   "severity": "HIGH",
+   "area": "vip.ts dev PSP webhook",
+   "detail": "booking checkout payments are inserted with order_id=NULL; the webhook then tries to confirm the booking via `bookings.id IN (SELECT booking_id FROM sales_orders WHERE id = payment.order_id)` which can never match, so a successful webhook leaves the booking PAYMENT_PENDING forever. Separately, `UPDATE table_allocations ... WHERE event_id AND status='HELD'` has no booking_id filter, so one successful deposit confirms EVERY held allocation in the event (cross-booking contamination).",
+   "evidence": "src/server/routes/vip.ts:281-360",
+   "remediation": "store booking_id on the payment row (or a payment_bookings link), confirm exactly that booking and only its allocations; add regression test",
+   "status": "fixed",
+   "fix": "fixed: checkout creates VIP sales_order+line+payment (order_id linked); webhook resolves tenant via system-lookup policy, dedups via integration_events ON CONFLICT, confirms only that booking + its allocations; regression tests/api/vip.test.ts"
+  },
+  {
+   "id": "F-002",
+   "severity": "HIGH",
+   "area": "finance.ts my-performance",
+   "detail": "joins `ae.visit_id = v.visit_id`; visits has no visit_id column so the query raises an error and the endpoint 500s (untested path).",
+   "evidence": "src/server/routes/finance.ts:337",
+   "remediation": "join ae.visit_id = v.id; add test",
+   "status": "fixed",
+   "fix": "fixed: ae.visit_id = v.id"
+  },
+  {
+   "id": "F-003",
+   "severity": "LOW",
+   "area": "ops.ts settlement finalize",
+   "detail": "status transition does not increment version; optimistic concurrency on the row is stale afterwards.",
+   "evidence": "src/server/routes/ops.ts:325-332",
+   "remediation": "add version=version+1; test finalize-then-refinalize",
+   "status": "fixed",
+   "fix": "fixed: version=version+1 on finalize"
+  },
+  {
+   "id": "F-004",
+   "severity": "MEDIUM",
+   "area": "vip.ts booking move",
+   "detail": "new table_allocation.status is copied verbatim from bookings.status; for a PAYMENT_PENDING booking this inserts 'PAYMENT_PENDING' into a CHECK-constrained enum and produces a 500 instead of a controlled result.",
+   "evidence": "src/server/routes/vip.ts:400-408",
+   "remediation": "map booking status -> allocation status (HOLD->HELD, CONFIRMED->CONFIRMED, PAYMENT_PENDING->HELD); test",
+   "status": "fixed",
+   "fix": "fixed: allocation status mapped via CASE (CONFIRMED->CONFIRMED else HELD)"
+  },
+  {
+   "id": "F-005",
+   "severity": "MEDIUM",
+   "area": "tx.ts withReceipt / platformReceipt",
+   "detail": "a receipt row stuck in PROCESSING (handler crashed after insert) blocks the same idempotency key until the 24h TTL because expires_at is never consulted on the conflict path.",
+   "evidence": "src/server/lib/tx.ts:86-101,177-187",
+   "remediation": "on conflict, if status='PROCESSING' and expires_at < now, delete/reclaim the receipt row",
+   "status": "fixed",
+   "fix": "fixed: expired receipts reclaimed (delete+retry) in withReceipt/platformReceipt"
+  },
+  {
+   "id": "F-006",
+   "severity": "HIGH",
+   "area": "worker CSV export",
+   "detail": "CSV escaper quotes but does not neutralize spreadsheet formula injection (=, +, -, @, TAB, CR leading chars). Master prompt and security_and_operations.md require CSV sanitization.",
+   "evidence": "src/worker/index.ts:122-127",
+   "remediation": "prefix dangerous leading characters with a single quote; add unit test",
+   "status": "fixed",
+   "fix": "fixed: CSV cells escaped for quotes/CR/LF + formula-injection tab prefix"
+  },
+  {
+   "id": "F-007",
+   "severity": "HIGH",
+   "area": "all routes",
+   "detail": "request bodies are cast with TypeScript `as` assertions only — no runtime schema validation (master prompt: runtime schemas required, TS assertions do not count).",
+   "evidence": "all src/server/routes/*.ts",
+   "remediation": "add Fastify `schema` option (bundled ajv) per route for body/params/query",
+   "status": "fixed",
+   "fixed_in": "phase3b"
+  },
+  {
+   "id": "F-008",
+   "severity": "HIGH",
+   "area": "app.ts hooks",
+   "detail": "no Origin/Fetch-Metadata/CSRF enforcement on state-changing cookie-authenticated requests; no security headers.",
+   "evidence": "src/server/app.ts",
+   "remediation": "add onRequest guard: POST/PUT/PATCH/DELETE require same-site (Sec-Fetch-Site) or allowed Origin; add baseline security headers",
+   "status": "fixed",
+   "fixed_in": "phase3b"
+  },
+  {
+   "id": "F-009",
+   "severity": "MEDIUM",
+   "area": "auth/device/invite/redeem endpoints",
+   "detail": "no application rate limiting on /auth/dev/login, /device/enroll, invitation accept, ticket redeem, customer search (PIN has DB lockout only).",
+   "evidence": "src/server/routes/{auth,devices,tickets,customers}.ts",
+   "remediation": "in-memory token-bucket hook for sensitive endpoints; document multi-instance limitation",
+   "status": "fixed",
+   "fixed_in": "phase3b"
+  },
+  {
+   "id": "F-010",
+   "severity": "LOW",
+   "area": "sync.ts SSE loop",
+   "detail": "reply.raw.write can throw after the client disconnects (write is outside try); also reopens a transaction per poll.",
+   "evidence": "src/server/routes/sync.ts:160-180",
+   "remediation": "guard writes with closed flag + try/catch",
+   "status": "fixed",
+   "fix": "fixed: SSE honors Last-Event-ID and emits id: per changed event"
+  },
+  {
+   "id": "F-011",
+   "severity": "MEDIUM",
+   "area": "roles",
+   "detail": "no GET /stores/:id/roles — roles and their permissions cannot be listed, although PUT /roles/:id exists.",
+   "remediation": "add list endpoint + permissions",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "GET /stores/:storeId/roles lists roles with permission keys"
+  },
+  {
+   "id": "F-012",
+   "severity": "MEDIUM",
+   "area": "memberships",
+   "detail": "no endpoint to (re)assign roles to a membership — invitation assigns once; role changes impossible except by editing the role itself.",
+   "remediation": "add PUT /memberships/:id/roles",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "PUT /stores/:storeId/memberships/:membershipId/roles — full set replacement, optimistic version, role_ids validated against store roles"
+  },
+  {
+   "id": "F-013",
+   "severity": "MEDIUM",
+   "area": "notifications",
+   "detail": "notification_jobs has no member-facing read/ack surface; IN_APP channel is write-only.",
+   "remediation": "add GET /me/notifications + ack endpoint (migration for read state)",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "GET /me/notifications (IN_APP inbox, unread filter) + POST /me/notifications/:id/read via notification_reads (idempotent)"
+  },
+  {
+   "id": "F-014",
+   "severity": "MEDIUM",
+   "area": "finance",
+   "detail": "no event-scoped orders list; only single-order GET.",
+   "remediation": "add GET /stores/:id/events/:eid/orders",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "GET /stores/:id/events/:eid/orders with kind/status filter"
+  },
+  {
+   "id": "F-015",
+   "severity": "MEDIUM",
+   "area": "visits",
+   "detail": "no additional-party/segment endpoint on an existing visit (追加人数の再判定) and no visit_members management for companions.",
+   "remediation": "add POST visits/:id/segments (re-judged) + members add/remove",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "POST visits/:id/segments (re-judged via judgeSegment, quota hold, approval_request on PENDING) + visit_members companion add/remove"
+  },
+  {
+   "id": "F-016",
+   "severity": "MEDIUM",
+   "area": "passes",
+   "detail": "no kiosk lookup for a pass by token/id for re-entry scanning; passes only surface inside visit summaries.",
+   "remediation": "add GET events/:id/passes?token= or list per visit",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "GET /events/:id/passes?token=|visit_id= — token hashed server-side, token_hash never exposed"
+  },
+  {
+   "id": "F-017",
+   "severity": "LOW",
+   "area": "events",
+   "detail": "no event update/cancel/duplicate endpoints (duplication is an explicit scope item).",
+   "remediation": "add PATCH event, POST /events/:id/duplicate, POST /events/:id/cancel",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "PATCH event (DRAFT only, optimistic version), POST /events/:id/duplicate (policy+rules+assignments copied as DRAFT), POST /events/:id/cancel (new CANCELED status in 0005)"
+  },
+  {
+   "id": "F-018",
+   "severity": "MEDIUM",
+   "area": "public booking",
+   "detail": "no unauthenticated public booking surface (公開予約フォーム).",
+   "remediation": "booking_pages table + public GET/POST endpoints (rate limited) creating APPROVAL_PENDING bookings",
+   "status": "open"
+  },
+  {
+   "id": "F-019",
+   "severity": "MEDIUM",
+   "area": "private events / quotations",
+   "detail": "no quotations model and no private-event detail flow (貸切/見積).",
+   "remediation": "migration: quotations table + endpoints; booking quotation link",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "quotations+quotation_lines (0004) + list/get/create/issue/transition endpoints; totals computed server-side"
+  },
+  {
+   "id": "F-020",
+   "severity": "LOW",
+   "area": "sync snapshot",
+   "detail": "N+1 visitSummary per visit inside snapshot.",
+   "remediation": "batch load or document acceptable size cap",
+   "status": "open"
+  },
+  {
+   "id": "F-021",
+   "severity": "LOW",
+   "area": "security headers",
+   "detail": "no CSP/X-Content-Type-Options/Referrer-Policy headers on API.",
+   "remediation": "onSend hook baseline headers",
+   "status": "fixed",
+   "fixed_in": "phase3b"
+  },
+  {
+   "id": "F-022",
+   "severity": "MEDIUM",
+   "area": "store onboarding",
+   "detail": "no POST /platform/tenants/:id/stores or store-scoped create; onboarding item store_created cannot complete via API.",
+   "remediation": "add platform store create + tenant admin bootstrap",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "POST /platform/tenants/:id/stores + GET list; nc_stores WITH CHECK widened for system scope in 0005"
+  },
+  {
+   "id": "F-023",
+   "severity": "MEDIUM",
+   "area": "auth alternatives",
+   "detail": "no email-link login, no TOTP/recovery MFA, LINE OIDC is a 501 stub (B-02 gated).",
+   "remediation": "email-link token flow (dev outbox) + TOTP enroll/verify + recovery codes; OIDC adapter interface kept behind config",
+   "status": "open"
+  },
+  {
+   "id": "F-024",
+   "severity": "LOW",
+   "area": "platform operators",
+   "detail": "no platform-operator management/list endpoint.",
+   "remediation": "GET/POST /platform/operators",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "GET/POST/DELETE /platform/operators (self-removal and last-operator protected)"
+  },
+  {
+   "id": "F-025",
+   "severity": "MEDIUM",
+   "area": "rewards lifecycle",
+   "detail": "reward_rules + settlement lines exist, but no statements/disputes/payout lifecycle (EP17 scope).",
+   "remediation": "migration + endpoints: reward_statements, reward_disputes, payout marks",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "GET /events/:id/reward-statements (per-referrer grouping, report.own scoping), reward-disputes raise/list/resolve+adjustment, settlement-payments record/list (external payment documentation only — no transfers)"
+  },
+  {
+   "id": "F-026",
+   "severity": "MEDIUM",
+   "area": "OpenAPI parity",
+   "detail": "spec/current/openapi.yaml is the v4 *designed* contract, not the implemented surface; no mechanical route/contract comparison.",
+   "remediation": "rewrite spec to implemented surface + parity test",
+   "status": "open"
+  },
+  {
+   "id": "F-027",
+   "severity": "MEDIUM",
+   "area": "tickets UX",
+   "detail": "no staff lookup of issued tickets by order for reprint/lost-token handling; token returned only at issuance (by design) so UI must capture it immediately.",
+   "remediation": "UI captures tokens at creation; add per-instance revoke/reissue endpoints",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "GET /tickets?order_id + POST /tickets/:id/reissue (old token VOID, new token minted) + /revoke; product status PATCH"
+  },
+  {
+   "id": "F-028",
+   "severity": "LOW",
+   "area": "hygiene",
+   "detail": "events.ts ends with `void requireOperator` hack; finance.ts param destructure lists every param name as a workaround.",
+   "remediation": "type route params properly",
+   "status": "fixed",
+   "fixed_in": "phase3c",
+   "fix": "void requireOperator hack removed; route params typed via schema helpers"
+  },
+  {
+   "id": "F-029",
+   "severity": "INFO",
+   "area": "feature coverage vs scope",
+   "detail": "unimplemented scope items: tenant import/migration jobs, branding, deletion-execution job, floor-map 2D editor UI, ticket QR UI, POS/inventory UI, CRM/campaigns, analytics/forecasting, multilingual/multicurrency beyond column, Stripe/Square/freee adapters, LINE OIDC, real WebPush/SES, platform console UI, role help/onboarding UI, PWA update flow, a11y pass.",
+   "remediation": "implement per phase; external-credential items stay BLOCKED with adapter seams",
+   "status": "open"
+  },
+  {
+   "id": "F-030",
+   "severity": "MEDIUM",
+   "area": "web/api contract",
+   "detail": "bookings list did not return `contact`, so public-page submissions' contact data was invisible to staff; customer detail returned no tags; audit-logs returned no actor display name.",
+   "remediation": "add fields to the read endpoints",
+   "status": "fixed",
+   "fixed_in": "phase4",
+   "fix": "vip.ts bookings GET selects b.contact; customers.ts detail returns tags (tag_id,tag_key); ops.ts audit-logs joins memberships -> actor_display"
+  },
+  {
+   "id": "F-031",
+   "severity": "LOW",
+   "area": "web/api contract",
+   "detail": "frontend draft used field names that do not exist in API responses (sale_price_minor, total_minor/purchaser/issued_at, result for forecast metrics, visit_count/reward_amount_minor for my-performance, {to,apply} stocktake transition, role id for invitations, allocations-by-table_id for the floor overlay).",
+   "remediation": "align UI to actual response/request shapes verified from route code",
+   "status": "fixed",
+   "fixed_in": "phase4",
+   "fix": "all view interfaces + request bodies corrected to route schemas (price_minor, amount_minor/buyer_name/created_at, metrics, visits/first_entries/sales_minor, expected_version/status/apply_adjustments, role_key, table_code-based floor overlay)"
+  },
+  {
+   "id": "F-032",
+   "severity": "LOW",
+   "area": "e2e",
+   "detail": "smoke.spec expected the flat pre-redesign admin page (audit log visible beside events); admin is now tabbed.",
+   "remediation": "drive the tab bar in the spec",
+   "status": "fixed",
+   "fixed_in": "phase4",
+   "fix": "spec clicks the Audit tab then asserts the Audit log heading; 3/3 e2e pass"
+  }
+ ]
+}

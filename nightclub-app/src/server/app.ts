@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import { randomUUID } from 'node:crypto';
 import { AppError } from './lib/errors.js';
 import { ReqAuth } from './lib/ctx.js';
+import { registerSecurity } from './lib/security.js';
 import authRoutes from './routes/auth.js';
 import deviceRoutes from './routes/devices.js';
 import eventRoutes from './routes/events.js';
@@ -15,10 +16,12 @@ import opsRoutes from './routes/ops.js';
 import platformRoutes, { storeSettingsRoutes } from './routes/platform.js';
 import ticketRoutes from './routes/tickets.js';
 import posRoutes from './routes/pos.js';
+import publicRoutes from './routes/public.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, genReqId: () => randomUUID() });
   await app.register(cookie);
+  registerSecurity(app);
 
   app.addHook('onRequest', async (req) => {
     req.auth = new ReqAuth(req);
@@ -72,6 +75,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await api.register(storeSettingsRoutes);
     await api.register(ticketRoutes);
     await api.register(posRoutes);
+    await api.register(publicRoutes);
   }, { prefix: '/api' });
 
   return app;

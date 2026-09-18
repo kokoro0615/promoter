@@ -1,0 +1,77 @@
+Phase 3c endpoint completion — verify evidence (2026-09-19)
+===========================================================
+
+Branch: feat/v5-jp-completion
+Scope: missing v5 endpoints + runtime schema validation + regression repair
+
+Implemented endpoints
+---------------------
+auth.ts      GET /stores/:storeId/roles
+             PUT /stores/:storeId/memberships/:membershipId/roles
+             PUT /stores/:storeId/roles/:roleId/permissions
+             GET /stores/:storeId/me/notifications (+?unread_only)
+             POST /stores/:storeId/me/notifications/:notificationId/read
+customers.ts GET /stores/:storeId/customers/:customerId (profile+aliases+visits+keeps)
+             POST/GET /stores/:storeId/customer-tags
+             PUT/DELETE /stores/:storeId/customers/:customerId/tags/:tagId
+events.ts    PATCH /stores/:storeId/events/:eventId
+             POST /stores/:storeId/events/:eventId/duplicate
+             POST /stores/:storeId/events/:eventId/cancel (new CANCELED status)
+             GET  /stores/:storeId/events/:eventId/policy-versions
+visits.ts    POST /stores/:storeId/events/:eventId/visits/:visitId/segments
+             POST/DELETE .../visits/:visitId/members(/:memberId)
+             GET  /stores/:storeId/events/:eventId/passes?token|visit_id
+ops.ts       GET /stores/:storeId/events/:eventId/provisional-entries
+             POST .../provisional-entries/:entryId/reconcile
+             campaigns (list/create/dispatch/cancel/deliveries)
+             forecasts (list/create deterministic run)
+platform.ts  GET/POST/DELETE /platform/operators(/:userId)
+             GET/POST /platform/tenants/:tenantId/stores
+vip.ts       quotations (list/get/create/issue/transition w/ totals server-side)
+finance.ts   GET orders list; reward-statements; reward-disputes
+             (raise/list/resolve+adjustment); settlement-payments (record/list)
+tickets.ts   GET ticket-orders, GET /tickets?order_id, reissue, revoke,
+             PATCH ticket-products status
+pos.ts       stocktakes (create/list/get/put lines/transition+adjustments)
+
+Schema/migration deltas (0005_v5_endpoints.sql)
+---------------------------------------------
+- events.status + 'CANCELED'
+- nc_stores WITH CHECK widened for scope='system' (platform operators manage
+  stores across tenants; personal scope still tenant-bound — same shape as
+  nc_tenants)
+- Targeted GRANT DELETE on current-state join/config tables:
+  membership_roles, role_permissions, event_assignments, price_rules,
+  customer_tag_assignments, visit_members, platform_operators,
+  command_receipts, platform_command_receipts
+  (ledgers remain append-only; changes are captured in audit_events)
+
+Fixes during regression repair
+------------------------------
+- ops.ts campaigns create: $5::jsonb / $7::timestamptz casts (PG could not
+  infer param type inside CASE)
+- ops.ts campaign dispatch target query: parameter indices $4/$5 -> $3/$4
+  (bound array had only 4 params -> 500)
+- tests/api/r1.test.ts: pending-approval lookup was "first PENDING in event";
+  another suite's pending request could be picked up, binding __seg to a
+  foreign visit's segment (entry POST -> 404 'segment'). Now scoped to the
+  visit/segment/request created by the R1 flow itself.
+- v5endpoints.test.ts: platform operator DELETE needs Idempotency-Key
+  (command-route convention); duplicate-verification uses new
+  GET /policy-versions list endpoint.
+
+Verify results (pnpm verify, this commit)
+-----------------------------------------
+- lint (tsc --noEmit): pass
+- unit: 9/9 pass
+- db (RLS): 7/7 pass
+- api: 90/90 pass (r1:16 r2r3:18 vip:8 security:13 v5endpoints:35)
+
+Prior failing state reproduced & repaired:
+- PUT memberships/:id/roles 500 -> permission denied (membership_roles DELETE)
+- customer tag unassign 500 -> permission denied (customer_tag_assignments DELETE)
+- visit member remove 500 -> permission denied (visit_members DELETE)
+- campaign create 500 -> $7 param type; dispatch 500 -> param indices
+- platform store create 500 -> nc_stores WITH CHECK blocked system scope
+- platform operator delete 422 -> test lacked Idempotency-Key header
+- event duplicate verify 404 -> no policy-versions list endpoint existed

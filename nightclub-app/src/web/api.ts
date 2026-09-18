@@ -8,15 +8,19 @@ export function setOpSession(id: string | null) {
   else sessionStorage.removeItem('nc_op_session');
 }
 
+// Server errors are application/problem+json: {code, detail, status, ...}.
+interface Problem { code?: string; detail?: string; status?: number }
+
 export class ApiError extends Error {
-  constructor(public status: number, public body: { error?: { code?: string; message?: string } } | null) {
-    super(body?.error?.message || `HTTP ${status}`);
+  constructor(public status: number, public body: Problem | null) {
+    super(body?.detail || `HTTP ${status}`);
   }
-  get code() { return this.body?.error?.code || `HTTP_${this.status}`; }
+  get code() { return this.body?.code || `HTTP_${this.status}`; }
 }
 
 export async function call<T = Record<string, unknown>>(
-  method: string, url: string, body?: unknown, opts: { idem?: string } = {},
+  method: string, url: string, body?: unknown,
+  opts: { idem?: string } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['content-type'] = 'application/json';

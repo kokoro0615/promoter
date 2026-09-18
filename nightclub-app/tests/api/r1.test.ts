@@ -48,6 +48,7 @@ describe('R1 slice', () => {
     expect(r.status).toBe(201);
     expect(r.body.segments[0].status).toBe('PENDING');
     (globalThis as { __visit?: string }).__visit = r.body.id;
+    (globalThis as { __seg?: string }).__seg = r.body.segments[0].id;
   });
 
   it('idempotent replay returns the stored result, not a duplicate', async () => {
@@ -98,11 +99,14 @@ describe('R1 slice', () => {
   });
 
   it('entrance approves normally (no absence/wait/arrival precondition)', async () => {
+    const visit = (globalThis as { __visit?: string }).__visit!;
     const list = await call('GET', evUrl('/approvals'), { cookies: kiosk, operatorSession });
     expect(list.status).toBe(200);
     const req0 = list.body.items.find(
-      (x: { status: string }) => x.status === 'PENDING');
+      (x: { status: string; visit_id: string }) =>
+        x.status === 'PENDING' && x.visit_id === visit);
     expect(req0).toBeTruthy();
+    (globalThis as { __req?: string }).__req = req0.id;
     const dec = await call('POST', evUrl(`/approvals/${req0.id}/decisions`),
       { cookies: kiosk, operatorSession, idem: 'dec-1' }, {
         expected_request_version: req0.version,
@@ -112,12 +116,15 @@ describe('R1 slice', () => {
     expect(dec.status).toBe(200);
     expect(dec.body.route).toBe('ENTRANCE');
     expect(dec.body.segment.status).toBe('AUTHORIZED');
-    (globalThis as { __seg?: string }).__seg = dec.body.segment.id;
+    expect(dec.body.segment.id).toBe(
+      (globalThis as { __seg?: string }).__seg);
   });
 
   it('second decision on a decided request is rejected (first wins)', async () => {
     const list = await call('GET', evUrl('/approvals'), { cookies: kiosk, operatorSession });
-    const req0 = list.body.items[0];
+    const req0 = list.body.items.find(
+      (x: { id: string }) =>
+        x.id === (globalThis as { __req?: string }).__req);
     const dec = await call('POST', evUrl(`/approvals/${req0.id}/decisions`),
       { cookies: kiosk, operatorSession, idem: 'dec-2' }, {
         expected_request_version: req0.version,
@@ -202,5 +209,10 @@ describe('R1 slice', () => {
     for (const a of ['device.enroll.create', 'visit.create', 'approval.decide', 'entry.create', 'payment.record']) {
       expect(actions).toContain(a);
     }
+    // Rows made by a personal session resolve the actor's display name.
+    const made = r.body.items.find(
+      (x: { action: string; actor_display?: string | null }) =>
+        x.action === 'visit.create');
+    expect(made?.actor_display).toBeTruthy();
   });
 });

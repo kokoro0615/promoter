@@ -8,6 +8,9 @@ import { E } from '../lib/errors.js';
 import { signSnapshot, verifySnapshot, sha256 } from '../lib/crypto.js';
 import { visitSummary } from '../lib/summary.js';
 import {
+  body, cursor, eventParams, query, str,
+} from '../lib/schemas.js';
+import {
   requirePersonal, requireOperator, requirePerm, gucPersonal, gucOperator,
 } from '../lib/ctx.js';
 
@@ -31,7 +34,9 @@ async function syncCaller(req: FastifyRequest, storeId: string, eventId: string)
 
 export default async function syncRoutes(app: FastifyInstance) {
   // Consistent snapshot: cursor + full visit list from one repeatable-read tx.
-  app.get('/stores/:storeId/events/:eventId/snapshot', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/snapshot', {
+    schema: { params: eventParams },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await syncCaller(req, storeId, eventId);
     return withCtx(caller.g, async (c) => {
@@ -59,7 +64,12 @@ export default async function syncRoutes(app: FastifyInstance) {
   });
 
   // Change feed: permission-filtered projection of outbox events.
-  app.get('/stores/:storeId/events/:eventId/changes', async (req) => {
+  app.get('/stores/:storeId/events/:eventId/changes', {
+    schema: {
+      params: eventParams,
+      querystring: query({ cursor, limit: { type: 'string', pattern: '^[0-9]+$', maxLength: 6 } }),
+    },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const q = req.query as { cursor?: string; limit?: string };
     const caller = await syncCaller(req, storeId, eventId);
@@ -102,7 +112,15 @@ export default async function syncRoutes(app: FastifyInstance) {
   });
 
   // Device ACK: proves data applied to screen (not human read).
-  app.post('/stores/:storeId/events/:eventId/sync-ack', async (req) => {
+  app.post('/stores/:storeId/events/:eventId/sync-ack', {
+    schema: {
+      params: eventParams,
+      body: body({
+        snapshot_token: str(2000), cursor,
+        visibility: { type: 'string', enum: ['FOREGROUND', 'BACKGROUND'] },
+      }, ['snapshot_token', 'cursor', 'visibility']),
+    },
+  }, async (req) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const { operator, member } = await requireOperator(req);
     if (operator.storeId !== storeId || operator.eventId !== eventId) {
@@ -143,10 +161,17 @@ export default async function syncRoutes(app: FastifyInstance) {
   });
 
   // SSE notify stream: sends "changed" pings with the latest cursor only.
-  app.get('/stores/:storeId/events/:eventId/stream', async (req, reply) => {
+  app.get('/stores/:storeId/events/:eventId/stream', {
+    schema: { params: eventParams, querystring: query({ cursor }) },
+  }, async (req, reply) => {
     const { storeId, eventId } = req.params as { storeId: string; eventId: string; visitId: string; requestId: string; entryId: string; orderId: string; paymentId: string; refundId: string; bookingId: string; settlementId: string; permitId: string; policyId: string; customerId: string; membershipId: string; deviceId: string; roleId: string };
     const caller = await syncCaller(req, storeId, eventId);
-    let cursor = BigInt(String((req.query as { cursor?: string }).cursor ?? '0'));
+    // Resume cursor: Last-Event-ID (SSE reconnect) takes precedence over the
+    // explicit ?cursor= query param.
+    const lastId = req.headers['last-event-id'];
+    const q = (req.query as { cursor?: string }).cursor;
+    let cursor = BigInt(
+      typeof lastId === 'string' && /^\d+$/.test(lastId) ? lastId : (q ?? '0'));
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
@@ -168,7 +193,8 @@ export default async function syncRoutes(app: FastifyInstance) {
         });
         if (head > cursor) {
           cursor = head;
-          reply.raw.write(`event: changed\ndata: {"cursor":"${cursor}"}\n\n`);
+          // id: lets the browser supply Last-Event-ID on reconnect.
+          reply.raw.write(`id: ${cursor}\nevent: changed\ndata: {"cursor":"${cursor}"}\n\n`);
         } else {
           reply.raw.write(`event: ping\ndata: {}\n\n`);
         }
