@@ -87,12 +87,13 @@ describe('roles + membership role assignment + notifications', () => {
 
 // ---------- customer detail + tags -------------------------------------------
 describe('customer detail + tags', () => {
-  it('GET /customers/:id returns profile, aliases, visits, keeps', async () => {
+  it('GET /customers/:id returns profile, aliases, tags, visits, keeps', async () => {
     const r = await call('GET', storeUrl(`/customers/${S.customers.sato}`),
       { cookies: promoter });
     expect(r.status).toBe(200);
     expect(r.body.customer.id).toBe(S.customers.sato);
     expect(Array.isArray(r.body.aliases)).toBe(true);
+    expect(Array.isArray(r.body.tags)).toBe(true);
     expect(Array.isArray(r.body.recent_visits)).toBe(true);
   });
 
@@ -116,10 +117,19 @@ describe('customer detail + tags', () => {
     const tag = list.body.items.find(
       (x: { id: string }) => x.id === tagId);
     expect(tag.customers).toBe(1);
+    // The detail endpoint surfaces the assignment for the CRM tag UI.
+    const det = await call('GET', storeUrl(`/customers/${S.customers.sato}`),
+      { cookies: admin });
+    expect((det.body.tags as { tag_id: string; tag_key: string }[])
+      .some((x) => x.tag_id === tagId && x.tag_key === 'vip')).toBe(true);
     const d = await call(
       'DELETE', storeUrl(`/customers/${S.customers.sato}/tags/${tagId}`),
       { cookies: admin });
     expect(d.status).toBe(200);
+    const det2 = await call('GET', storeUrl(`/customers/${S.customers.sato}`),
+      { cookies: admin });
+    expect((det2.body.tags as { tag_id: string }[])
+      .some((x) => x.tag_id === tagId)).toBe(false);
   });
 });
 

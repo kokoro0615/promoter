@@ -209,5 +209,10 @@ describe('R1 slice', () => {
     for (const a of ['device.enroll.create', 'visit.create', 'approval.decide', 'entry.create', 'payment.record']) {
       expect(actions).toContain(a);
     }
+    // Rows made by a personal session resolve the actor's display name.
+    const made = r.body.items.find(
+      (x: { action: string; actor_display?: string | null }) =>
+        x.action === 'visit.create');
+    expect(made?.actor_display).toBeTruthy();
   });
 });

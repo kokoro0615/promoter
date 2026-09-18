@@ -50,9 +50,13 @@ describe('public booking pages', () => {
     // Staff sees the pending booking in the normal list, contact attached.
     const list = await call('GET', `${base}/bookings`, { cookies });
     expect(list.status).toBe(200);
-    const row = (list.body.items as { id: string; status: string }[])
-      .find((x) => x.id === bookingId);
+    const row = (list.body.items as {
+      id: string; status: string;
+      contact?: { name?: string; phone?: string; note?: string } | null;
+    }[]).find((x) => x.id === bookingId);
     expect(row?.status).toBe('APPROVAL_PENDING');
+    expect(row?.contact?.name).toBe('Tanaka');
+    expect(row?.contact?.phone).toBe('090-1111-2222');
   });
 
   it('closing a page removes it from public lookup', async () => {
