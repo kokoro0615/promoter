@@ -15,10 +15,11 @@
     "evidence_phase3c": "docs/execution/evidence/phase3c_verify_20260919.txt",
     "evidence_phase3d": "docs/execution/evidence/phase3d_verify_20260919.txt",
     "evidence_phase4": "docs/execution/evidence/phase4_verify_20260919.txt",
-    "evidence_phase9": "docs/execution/evidence/phase9_verify_20260919.txt"
+    "evidence_phase9": "docs/execution/evidence/phase9_verify_20260919.txt",
+    "pr": "https://github.com/kokoro0615/promoter/pull/2 (OPEN, feat/v5-jp-completion -> main, verified via gh pr view 2026-09-19)"
   },
   "current_release": "R1 verified; R2/R3 internal foundations verified",
-  "current_epic": "v5: staging handoff — PR + ops docs",
+  "current_epic": "v5: PR #2 open — review/staging handoff",
   "phase": "v5 Phase 9: spec parity 75/78 (残3=意図的差分: exports{id}→list+download, public bookings→slug submissions, public checkout→資金境界で非実装)。parity 7 endpoint実装(segment replace/attribution/order lines/templates/coupons/notification-templates/imports) + 権限4キー + ER再生成(model_summary.mjs) + api_parity生成。basis_points 0→10000 潜在バグ修正。",
   "completed_features": [
     "EP01-04: tenants/stores/users/memberships/roles/permissions, dev-issuer login, invitations, memberships suspend, operator PIN (argon2id), device enrollment/pairing, operator sessions with epoch-based replacement + X-Operator-Context",

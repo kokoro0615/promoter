@@ -48,7 +48,8 @@ path (F-001), PROCESSING receipt reclaim (F-005), and CSRF/rate-limit (F-008/9).
 
 ## Work order (remaining)
 
-PR/staging handoff (push `feat/v5-jp-completion`, review notes, ops runbook).
+PR #2 open on GitHub (feat/v5-jp-completion -> main, verified via `gh pr view` 2026-09-19):
+https://github.com/kokoro0615/promoter/pull/2 — review/merge + staging handoff.
 Optional depth: more E2E beyond the 3 smoke paths; tenant import job
 execution (B-06); ticket QR display; 3D floor map.
 External-credential work stays BLOCKED behind adapter seams (see blockers.md):
